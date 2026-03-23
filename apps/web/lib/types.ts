@@ -37,6 +37,10 @@ export type OrderResponse = {
 	commercial: string | null;
 	created_at: string;
 	date_validation: string | null;
+	camion_id: string | null;
+	camion_nom: string | null;
+	pharmacien_nom: string | null;
+	pharmacien_email: string | null;
 };
 
 export type OrderDetailResponse = OrderResponse & {
@@ -48,4 +52,33 @@ export type PaginatedResponse<T> = {
 	limit: number;
 	offset: number;
 	items: T[];
+};
+
+export type CamionResponse = {
+	id: string;
+	nom: string;
+	plaque: string;
+	created_at: string;
+};
+
+export type FeuilleDeRouteResponse = {
+	id: string;
+	camion_id: string;
+	camion_nom: string;
+	camion_plaque: string;
+	date: string;
+	ligne: string | null;
+	compteurs: {
+		colis_std: number;
+		sachets_std: number;
+		colis_frg: number;
+		sachets_frg: number;
+	};
+	commandes: {
+		id: string;
+		reference_id: string;
+		montant_total: number;
+		pharmacien_id: string;
+		statut: string;
+	}[];
 };
