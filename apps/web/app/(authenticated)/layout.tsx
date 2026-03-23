@@ -3,6 +3,7 @@
 import { Sidebar } from "@/components/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
+import { CartProvider } from "@/lib/cart";
 
 export default function AuthenticatedLayout({
 	children,
@@ -20,11 +21,13 @@ export default function AuthenticatedLayout({
 	}
 
 	return (
-		<div className="flex h-screen">
-			<Sidebar />
-			<main className="flex-1 overflow-y-auto bg-background p-6">
-				<div className="mx-auto max-w-7xl">{children}</div>
-			</main>
-		</div>
+		<CartProvider>
+			<div className="flex h-screen">
+				<Sidebar />
+				<main className="flex-1 overflow-y-auto bg-background p-6">
+					<div className="mx-auto max-w-7xl">{children}</div>
+				</main>
+			</div>
+		</CartProvider>
 	);
 }
