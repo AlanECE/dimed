@@ -1,8 +1,12 @@
+import "@/app/globals.css";
+import { AuthProvider } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Figtree, Noto_Sans } from "next/font/google";
+import { Toaster } from "sonner";
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
+const figtree = Figtree({ subsets: ["latin"], variable: "--font-heading" });
+const notoSans = Noto_Sans({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
 	title: "DIMED - Gestion Logistique Pharmaceutique",
@@ -15,8 +19,13 @@ export default function RootLayout({
 	children: React.ReactNode;
 }) {
 	return (
-		<html lang="fr" className={cn("font-sans", geist.variable)}>
-			<body>{children}</body>
+		<html lang="fr" className={cn("font-sans", figtree.variable, notoSans.variable)}>
+			<body>
+				<AuthProvider>
+					{children}
+					<Toaster richColors position="top-right" />
+				</AuthProvider>
+			</body>
 		</html>
 	);
 }
