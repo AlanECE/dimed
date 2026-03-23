@@ -8,6 +8,7 @@ from app.db.base import AuditMixin, Base
 
 
 class UserRole(enum.StrEnum):
+    ADMIN = "admin"
     PHARMACIEN = "pharmacien"
     OPERATRICE = "operatrice"
     PREPARATEUR = "preparateur"

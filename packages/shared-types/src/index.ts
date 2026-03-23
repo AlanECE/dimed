@@ -12,4 +12,10 @@ export type OrderStatus =
 	| "retournee"
 	| "livree_partiellement";
 
-export type UserRole = "pharmacien" | "operatrice" | "preparateur" | "controleur" | "livreur";
+export type UserRole =
+	| "admin"
+	| "pharmacien"
+	| "operatrice"
+	| "preparateur"
+	| "controleur"
+	| "livreur";
