@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import CurrentUser
 from app.db.session import get_db
 from app.documents.service import create_route_sheet, get_route_sheet
+from app.models.camion import Camion
 from app.models.commande import Commande
-from app.models.document import BonDeLivraison, Facture
+from app.models.document import BonDeLivraison, Facture, FeuilleDeRoute
 
 STORAGE_ROOT = Path(__file__).resolve().parents[3] / "storage" / "documents"
 
@@ -106,6 +107,53 @@ async def create_feuille_route(
     await db.commit()
     await db.refresh(feuille)
     return RouteSheetResponse.model_validate(feuille)
+
+
+@router.get("/feuilles-route")
+async def list_feuilles_route(
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """List all route sheets with camion info and assigned commandes."""
+    result = await db.execute(select(FeuilleDeRoute).order_by(FeuilleDeRoute.date.desc()))
+    feuilles = result.scalars().all()
+
+    # Load camion info
+    camion_ids = {f.camion_id for f in feuilles}
+    camions_map: dict = {}
+    if camion_ids:
+        camions_result = await db.execute(select(Camion).where(Camion.id.in_(camion_ids)))
+        camions_map = {c.id: c for c in camions_result.scalars().all()}
+
+    sheets = []
+    for f in feuilles:
+        camion = camions_map.get(f.camion_id)
+        cmd_result = await db.execute(select(Commande).where(Commande.camion_id == f.camion_id))
+        commandes = cmd_result.scalars().all()
+
+        sheets.append(
+            {
+                "id": str(f.id),
+                "camion_id": str(f.camion_id),
+                "camion_nom": camion.nom if camion else "Inconnu",
+                "camion_plaque": camion.plaque if camion else "",
+                "date": str(f.date),
+                "ligne": f.ligne,
+                "compteurs": f.compteurs,
+                "commandes": [
+                    {
+                        "id": str(c.id),
+                        "reference_id": c.reference_id,
+                        "montant_total": float(c.montant_total),
+                        "pharmacien_id": str(c.pharmacien_id),
+                        "statut": c.statut.value if hasattr(c.statut, "value") else c.statut,
+                    }
+                    for c in commandes
+                ],
+            }
+        )
+
+    return {"feuilles": sheets, "total": len(sheets)}
 
 
 @router.get("/feuilles-route/{feuille_id}")

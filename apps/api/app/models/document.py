@@ -33,7 +33,7 @@ class FeuilleDeRoute(AuditMixin, Base):
     __tablename__ = "feuilles_route"
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    camion_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    camion_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("camions.id"), nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
     ligne: Mapped[str | None] = mapped_column(String(100), nullable=True)
     n_rotation: Mapped[str | None] = mapped_column(String(50), nullable=True)

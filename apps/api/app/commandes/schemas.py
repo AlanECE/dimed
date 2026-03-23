@@ -13,6 +13,10 @@ class CreateOrderRequest(BaseModel):
     articles: list[ArticleItem] = Field(min_length=1)
 
 
+class AssignCamionRequest(BaseModel):
+    camion_id: UUID
+
+
 class LigneResponse(BaseModel):
     id: str
     medicament_id: str
@@ -34,6 +38,10 @@ class OrderResponse(BaseModel):
     commercial: str | None
     created_at: datetime
     date_validation: datetime | None
+    camion_id: str | None = None
+    camion_nom: str | None = None
+    pharmacien_nom: str | None = None
+    pharmacien_email: str | None = None
 
     model_config = {"from_attributes": True}
 

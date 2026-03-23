@@ -77,7 +77,7 @@ async def generate_order_documents(
     return facture, bl
 
 
-async def create_route_sheet(db: AsyncSession, camion_id: str, date: datetime) -> FeuilleDeRoute:
+async def create_route_sheet(db: AsyncSession, camion_id: UUID, date: datetime) -> FeuilleDeRoute:
     # Check no duplicate active sheet (RG-1-05)
     result = await db.execute(
         select(FeuilleDeRoute).where(

@@ -37,6 +37,7 @@ class Commande(AuditMixin, Base):
     montant_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     commercial: Mapped[str | None] = mapped_column(String(255), nullable=True)
     date_validation: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    camion_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("camions.id"), nullable=True)
 
     lignes: Mapped[list["LigneCommande"]] = relationship(
         back_populates="commande", cascade="all, delete-orphan"

@@ -1,4 +1,5 @@
 from app.models.audit import AuditLog
+from app.models.camion import Camion
 from app.models.commande import Commande, LigneCommande, OrderStatus
 from app.models.document import BonDeLivraison, Facture, FeuilleDeRoute
 from app.models.medicament import Medicament
@@ -14,6 +15,7 @@ from app.models.user import User, UserRole
 __all__ = [
     "User",
     "UserRole",
+    "Camion",
     "Medicament",
     "Commande",
     "LigneCommande",
