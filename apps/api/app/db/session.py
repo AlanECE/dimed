@@ -8,6 +8,9 @@ engine = create_async_engine(settings.database_url, echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
+import app.db.audit_listener  # noqa: E402, F401 — register event listeners after session init
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
