@@ -7,7 +7,9 @@ pre-commit:
       stage_fixed: true
     ruff-check:
       glob: "*.py"
-      run: cd apps/api && uv run ruff check {staged_files}
+      root: "apps/api/"
+      run: uv run ruff check {staged_files}
     ruff-format:
       glob: "*.py"
-      run: cd apps/api && uv run ruff format --check {staged_files}
+      root: "apps/api/"
+      run: uv run ruff format --check {staged_files}
