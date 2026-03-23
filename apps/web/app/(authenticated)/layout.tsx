@@ -1,5 +1,6 @@
 "use client";
 
+import { NotificationBell } from "@/components/notification-bell";
 import { Sidebar } from "@/components/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
@@ -10,7 +11,7 @@ export default function AuthenticatedLayout({
 }: {
 	children: React.ReactNode;
 }) {
-	const { loading } = useAuth();
+	const { user, loading } = useAuth();
 
 	if (loading) {
 		return (
@@ -24,9 +25,15 @@ export default function AuthenticatedLayout({
 		<CartProvider>
 			<div className="flex h-screen">
 				<Sidebar />
-				<main className="flex-1 overflow-y-auto bg-background p-6">
-					<div className="mx-auto max-w-7xl">{children}</div>
-				</main>
+				<div className="flex flex-1 flex-col">
+					<header className="flex items-center justify-end gap-3 border-b px-6 py-2">
+						<NotificationBell />
+						<span className="text-sm text-slate-600">{user?.nom || user?.email}</span>
+					</header>
+					<main className="flex-1 overflow-y-auto bg-background p-6">
+						<div className="mx-auto max-w-7xl">{children}</div>
+					</main>
+				</div>
 			</div>
 		</CartProvider>
 	);

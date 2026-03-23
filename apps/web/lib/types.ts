@@ -61,6 +61,20 @@ export type CamionResponse = {
 	created_at: string;
 };
 
+export type NotificationResponse = {
+	id: string;
+	commande_id: string;
+	type: string;
+	message: string;
+	read: boolean;
+	created_at: string;
+};
+
+export type NotificationListResponse = {
+	notifications: NotificationResponse[];
+	unread_count: number;
+};
+
 export type FeuilleDeRouteResponse = {
 	id: string;
 	camion_id: string;
