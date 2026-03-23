@@ -10,6 +10,7 @@ from app.commandes.router import router as commandes_router
 from app.db.session import engine
 from app.documents.router import router as documents_router
 from app.medicaments.router import router as medicaments_router
+from app.notifications.router import router as notifications_router
 
 
 @asynccontextmanager
@@ -33,6 +34,7 @@ app.include_router(camions_router, prefix="/camions", tags=["camions"])
 app.include_router(commandes_router, prefix="/commandes", tags=["commandes"])
 app.include_router(documents_router, prefix="/documents", tags=["documents"])
 app.include_router(medicaments_router, prefix="/medicaments", tags=["medicaments"])
+app.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
 
 
 @app.get("/health")

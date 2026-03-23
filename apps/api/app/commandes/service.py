@@ -10,8 +10,23 @@ from sqlalchemy.orm import selectinload
 from app.commandes.schemas import CreateOrderRequest
 from app.models.commande import Commande, LigneCommande, OrderStatus
 from app.models.medicament import Medicament
+from app.models.notification import Notification
 from app.models.references import next_commande_ref
 from app.models.state_machine import validate_transition
+
+NOTIFIABLE_STATUSES = {
+    OrderStatus.ACCEPTEE,
+    OrderStatus.EN_PREPARATION,
+    OrderStatus.EN_ROUTE,
+    OrderStatus.LIVREE,
+}
+
+STATUS_MESSAGES: dict[OrderStatus, str] = {
+    OrderStatus.ACCEPTEE: "acceptée",
+    OrderStatus.EN_PREPARATION: "en préparation",
+    OrderStatus.EN_ROUTE: "en cours de livraison",
+    OrderStatus.LIVREE: "livrée",
+}
 
 
 async def create_order(db: AsyncSession, pharmacien_id: UUID, body: CreateOrderRequest) -> Commande:
@@ -91,4 +106,17 @@ async def transition_order(
         await generate_order_documents(db, commande)
 
     await db.flush()
+
+    # Create notification for pharmacien
+    if target_status in NOTIFIABLE_STATUSES:
+        notification = Notification(
+            id=uuid4(),
+            user_id=commande.pharmacien_id,
+            commande_id=commande.id,
+            type=target_status.value,
+            message=f"Commande {commande.reference_id} {STATUS_MESSAGES[target_status]}",
+        )
+        db.add(notification)
+        await db.flush()
+
     return commande
