@@ -1,4 +1,8 @@
+import { cn } from "@/lib/utils";
 import type { Metadata } from "next";
+import { Geist } from "next/font/google";
+
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
 	title: "DIMED - Gestion Logistique Pharmaceutique",
@@ -11,7 +15,7 @@ export default function RootLayout({
 	children: React.ReactNode;
 }) {
 	return (
-		<html lang="fr">
+		<html lang="fr" className={cn("font-sans", geist.variable)}>
 			<body>{children}</body>
 		</html>
 	);
