@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from app.admin.router import router as admin_router
+from app.auth.router import router as auth_router
 from app.db.session import engine
 
 
@@ -20,6 +22,9 @@ app = FastAPI(
     description="Pharmaceutical logistics management",
     lifespan=lifespan,
 )
+
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
 
 @app.get("/health")

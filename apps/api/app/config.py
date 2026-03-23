@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-change-in-production"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
+    cookie_secure: bool = False
 
     model_config = {"env_prefix": "DIMED_"}
 
