@@ -85,5 +85,10 @@ async def transition_order(
         commande.operatrice_id = actor_id
         commande.date_validation = datetime.now(UTC)
 
+        # Auto-generate documents on acceptance
+        from app.documents.service import generate_order_documents
+
+        await generate_order_documents(db, commande)
+
     await db.flush()
     return commande
