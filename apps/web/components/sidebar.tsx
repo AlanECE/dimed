@@ -4,15 +4,39 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { ClipboardList, LogOut, Package, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import {
+	ClipboardList,
+	LayoutDashboard,
+	LogOut,
+	Package,
+	PanelLeftClose,
+	PanelLeftOpen,
+	Route,
+	Truck,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-const navItems = [
-	{ href: "/catalogue", label: "Catalogue", icon: Package },
-	{ href: "/commandes", label: "Mes Commandes", icon: ClipboardList },
-];
+type NavItem = { href: string; label: string; icon: LucideIcon };
+
+const NAV_ITEMS: Record<string, NavItem[]> = {
+	pharmacien: [
+		{ href: "/catalogue", label: "Catalogue", icon: Package },
+		{ href: "/commandes", label: "Mes Commandes", icon: ClipboardList },
+	],
+	operatrice: [
+		{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+		{ href: "/dashboard/routes", label: "Feuilles de route", icon: Route },
+		{ href: "/dashboard/camions", label: "Camions", icon: Truck },
+	],
+	admin: [
+		{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+		{ href: "/dashboard/routes", label: "Feuilles de route", icon: Route },
+		{ href: "/dashboard/camions", label: "Camions", icon: Truck },
+	],
+};
 
 const COLLAPSED_KEY = "dimed-sidebar-collapsed";
 
@@ -31,6 +55,8 @@ export function Sidebar() {
 		setCollapsed(next);
 		localStorage.setItem(COLLAPSED_KEY, String(next));
 	}
+
+	const navItems = NAV_ITEMS[user?.role ?? ""] ?? [];
 
 	return (
 		<aside
@@ -62,7 +88,10 @@ export function Sidebar() {
 			{/* Navigation */}
 			<nav className="flex-1 space-y-1 p-2">
 				{navItems.map((item) => {
-					const isActive = pathname.startsWith(item.href);
+					// For /dashboard, exact match to avoid highlighting on sub-routes
+					// For others, startsWith match for nested routes
+					const isActive =
+						item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href);
 					return (
 						<Link
 							key={item.href}
@@ -87,9 +116,7 @@ export function Sidebar() {
 			{/* User info + logout */}
 			<div className="p-3">
 				{!collapsed && user && (
-					<p className="mb-2 truncate text-sm font-medium text-foreground">
-						{user.prenom} {user.nom}
-					</p>
+					<p className="mb-2 truncate text-sm font-medium text-foreground">{user.nom}</p>
 				)}
 				<Button
 					variant="ghost"

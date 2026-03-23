@@ -12,7 +12,7 @@ export function middleware(request: NextRequest) {
 	}
 
 	if (isPublic && hasToken) {
-		return NextResponse.redirect(new URL("/catalogue", request.url));
+		return NextResponse.redirect(new URL("/", request.url));
 	}
 
 	return NextResponse.next();
