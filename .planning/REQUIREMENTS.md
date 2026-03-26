@@ -9,7 +9,7 @@ Requirements for Milestone 1: Module 1 - Commande en ligne.
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: Turborepo monorepo with apps/web, apps/api, packages/ structure
+- [x] **INFRA-01**: Turborepo monorepo with apps/web, apps/api, packages/ structure
 - [ ] **INFRA-02**: Docker Compose dev stack (PostgreSQL, Redis, API, Web)
 - [ ] **INFRA-03**: Hardened Docker images for production deployment
 - [x] **INFRA-04**: Alembic database migrations setup
@@ -120,7 +120,7 @@ Deferred to Milestone 2 (Module 2) and Milestone 3 (Module 3).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 10 | Pending |
+| INFRA-01 | Phase 10 | Complete |
 | INFRA-02 | Phase 10 | Pending |
 | INFRA-03 | Phase 10 | Pending |
 | INFRA-04 | Phase 10 | Complete |
