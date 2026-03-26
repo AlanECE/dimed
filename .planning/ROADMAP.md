@@ -10,7 +10,7 @@
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|-----------------|
-| 10 | Foundations & Infrastructure | Monorepo, Docker, database, CI | INFRA-01..04 | 4 |
+| 10 | 2/3 | In Progress|  | 4 |
 | 20 | Authentication & RBAC | JWT auth, 5 roles, protected endpoints | AUTH-01..05 | 5 |
 | 30 | Data Model M1 | Order entities, state machine, audit columns | ORD-05, ORD-07, AUDIT-01..03 | 5 |
 | 40 | Medication Import | Articles.xlsx import, catalog CRUD | MED-01..03 | 3 |
