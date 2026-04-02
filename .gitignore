@@ -17,6 +17,8 @@ package-lock.json
 # IDE / tooling
 .claude/
 .planning/
+CLAUDE.md
+docs/superpowers/
 .playwright-mcp/
 .playwright-cli/
 apps/api/.playwright-cli/
