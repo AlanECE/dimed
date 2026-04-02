@@ -9,6 +9,7 @@ from alembic import context
 from app.config import settings
 from app.db.base import Base
 from app.models import (  # noqa: F401 — ensure all models registered
+    Arrivage,
     AuditLog,
     BonDeLivraison,
     Commande,
@@ -26,11 +27,13 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-config.set_main_option("sqlalchemy.url", settings.database_url.replace("+asyncpg", ""))
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
+    # Offline mode needs sync driver
+    url = url.replace("+asyncpg", "")
     context.configure(
         url=url,
         target_metadata=target_metadata,

@@ -56,8 +56,8 @@ async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T>
 			}
 			return retryRes.json();
 		}
-		// Refresh failed — redirect to login
-		if (typeof window !== "undefined") {
+		// Refresh failed — redirect to login (skip if already on login page)
+		if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
 			window.location.href = "/login";
 		}
 		throw new ApiError(401, "Session expired");
@@ -65,7 +65,14 @@ async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T>
 
 	if (!response.ok) {
 		const text = await response.text();
-		throw new ApiError(response.status, text);
+		let message = "Erreur serveur";
+		try {
+			const json = JSON.parse(text);
+			message = json.detail ?? json.message ?? message;
+		} catch {
+			// Raw text may contain internal details — don't expose it
+		}
+		throw new ApiError(response.status, message);
 	}
 
 	return response.json();

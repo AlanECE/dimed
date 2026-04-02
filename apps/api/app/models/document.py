@@ -2,7 +2,16 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, DateTime, ForeignKey, LargeBinary, Numeric, String, Uuid
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    LargeBinary,
+    Numeric,
+    String,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,12 +40,15 @@ class BonDeLivraison(AuditMixin, Base):
 
 class FeuilleDeRoute(AuditMixin, Base):
     __tablename__ = "feuilles_route"
+    __table_args__ = (UniqueConstraint("camion_id", "date", name="uq_feuilles_route_camion_date"),)
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     camion_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("camions.id"), nullable=False)
+    livreur_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     date: Mapped[date] = mapped_column(Date, nullable=False)
     ligne: Mapped[str | None] = mapped_column(String(100), nullable=True)
     n_rotation: Mapped[str | None] = mapped_column(String(50), nullable=True)
     compteurs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    chargement_valide: Mapped[bool] = mapped_column(default=False)
     signature_expedition: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     signature_chauffeur: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)

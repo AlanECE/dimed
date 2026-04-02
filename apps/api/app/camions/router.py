@@ -26,7 +26,7 @@ class UpdateCamionRequest(BaseModel):
 
 
 class CamionResponse(BaseModel):
-    id: str
+    id: UUID
     nom: str
     plaque: str
     created_at: datetime

@@ -1,3 +1,4 @@
+from app.models.arrivage import Arrivage
 from app.models.audit import AuditLog
 from app.models.camion import Camion
 from app.models.commande import Commande, LigneCommande, OrderStatus
@@ -23,6 +24,7 @@ __all__ = [
     "Facture",
     "BonDeLivraison",
     "FeuilleDeRoute",
+    "Arrivage",
     "AuditLog",
     "validate_transition",
     "VALID_TRANSITIONS",

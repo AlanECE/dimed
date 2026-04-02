@@ -22,7 +22,10 @@ class User(AuditMixin, Base):
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+    )
     nom: Mapped[str] = mapped_column(String(255), nullable=False)
     adresse: Mapped[str | None] = mapped_column(String(500), nullable=True)
     secteur: Mapped[str | None] = mapped_column(String(100), nullable=True)

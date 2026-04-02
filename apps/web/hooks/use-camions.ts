@@ -12,7 +12,7 @@ export function useCamions() {
 	const fetchCamions = useCallback(async () => {
 		setLoading(true);
 		try {
-			const data = await fetchApi<{ camions: CamionResponse[]; total: number }>("/camions");
+			const data = await fetchApi<{ camions: CamionResponse[]; total: number }>("/camions/");
 			setCamions(data.camions);
 			setError(null);
 		} catch (err) {

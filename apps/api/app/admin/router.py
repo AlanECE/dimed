@@ -27,9 +27,10 @@ AdminUser = Depends(_check_admin)
 @router.post("/users", status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: AdminUserCreate,
-    _admin: User = AdminUser,  # noqa: B008
+    admin_user: User = AdminUser,  # noqa: B008
 ) -> UserResponse:
     async with async_session() as db:
+        db.info["actor_id"] = str(admin_user.id)
         existing = await db.execute(select(User).where(User.email == body.email))
         if existing.scalar_one_or_none():
             raise HTTPException(
@@ -79,9 +80,10 @@ async def list_users(
 async def update_user(
     user_id: UUID,
     body: AdminUserUpdate,
-    _admin: User = AdminUser,  # noqa: B008
+    admin_user: User = AdminUser,  # noqa: B008
 ) -> UserResponse:
     async with async_session() as db:
+        db.info["actor_id"] = str(admin_user.id)
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
 

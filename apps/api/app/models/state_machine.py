@@ -7,7 +7,8 @@ VALID_TRANSITIONS: dict[OrderStatus, list[OrderStatus]] = {
         OrderStatus.PRELEVEE_PARTIELLEMENT,
         OrderStatus.EN_VERIFICATION,
     ],
-    OrderStatus.EN_VERIFICATION: [OrderStatus.PRETE],
+    OrderStatus.PRELEVEE_PARTIELLEMENT: [OrderStatus.EN_VERIFICATION],
+    OrderStatus.EN_VERIFICATION: [OrderStatus.PRETE, OrderStatus.EN_PREPARATION],
     OrderStatus.PRETE: [OrderStatus.EN_ROUTE],
     OrderStatus.EN_ROUTE: [
         OrderStatus.LIVREE,

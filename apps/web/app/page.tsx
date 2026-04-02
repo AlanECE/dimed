@@ -14,11 +14,14 @@ export default function Home() {
 			router.push("/login");
 			return;
 		}
-		if (user.role === "operatrice" || user.role === "admin") {
-			router.push("/dashboard");
-		} else {
-			router.push("/catalogue");
-		}
+		const routes: Record<string, string> = {
+			operatrice: "/dashboard",
+			admin: "/dashboard",
+			preparateur: "/preparation",
+			controleur: "/verification",
+			livreur: "/livraison",
+		};
+		router.push(routes[user.role] || "/catalogue");
 	}, [user, loading, router]);
 
 	return null;

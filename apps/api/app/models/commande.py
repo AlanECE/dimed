@@ -3,7 +3,17 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String, Uuid
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    Numeric,
+    String,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import AuditMixin, Base
@@ -32,12 +42,22 @@ class Commande(AuditMixin, Base):
     pharmacien_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     operatrice_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     statut: Mapped[OrderStatus] = mapped_column(
-        Enum(OrderStatus), nullable=False, default=OrderStatus.CREEE
+        Enum(OrderStatus, values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        default=OrderStatus.CREEE,
     )
     montant_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     commercial: Mapped[str | None] = mapped_column(String(255), nullable=True)
     date_validation: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     camion_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("camions.id"), nullable=True)
+    feuille_route_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("feuilles_route.id"), nullable=True
+    )
+    signature_pharmacien: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    motif_echec: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    nb_colis: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    visa_preparateur: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    visa_controleur: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     lignes: Mapped[list["LigneCommande"]] = relationship(
         back_populates="commande", cascade="all, delete-orphan"
@@ -52,7 +72,9 @@ class LigneCommande(AuditMixin, Base):
     medicament_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("medicaments.id"), nullable=False)
     designation: Mapped[str] = mapped_column(String(500), nullable=False)
     qte_demandee: Mapped[int] = mapped_column(Integer, nullable=False)
+    qte_prelevee: Mapped[int | None] = mapped_column(Integer, nullable=True)
     prix_unitaire: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     n_lot: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    verifie: Mapped[bool] = mapped_column(Boolean, default=False)
 
     commande: Mapped["Commande"] = relationship(back_populates="lignes")

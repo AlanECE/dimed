@@ -18,8 +18,8 @@ class AssignCamionRequest(BaseModel):
 
 
 class LigneResponse(BaseModel):
-    id: str
-    medicament_id: str
+    id: UUID
+    medicament_id: UUID
     designation: str
     qte_demandee: int
     prix_unitaire: float
@@ -29,16 +29,16 @@ class LigneResponse(BaseModel):
 
 
 class OrderResponse(BaseModel):
-    id: str
+    id: UUID
     reference_id: str
     statut: str
     montant_total: float
-    pharmacien_id: str
-    operatrice_id: str | None
+    pharmacien_id: UUID
+    operatrice_id: UUID | None
     commercial: str | None
     created_at: datetime
     date_validation: datetime | None
-    camion_id: str | None = None
+    camion_id: UUID | None = None
     camion_nom: str | None = None
     pharmacien_nom: str | None = None
     pharmacien_email: str | None = None

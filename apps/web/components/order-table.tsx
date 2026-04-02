@@ -20,6 +20,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { useOrders } from "@/hooks/use-orders";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 
@@ -74,7 +75,7 @@ export function OrderTable() {
 			{/* Filters */}
 			<div className="flex gap-3">
 				<Select value={statut} onValueChange={(v) => updateParam("statut", v ?? "all")}>
-					<SelectTrigger className="w-48">
+					<SelectTrigger className="w-48 rounded-lg border-border/60 bg-card text-[13px]">
 						<SelectValue placeholder="Statut" />
 					</SelectTrigger>
 					<SelectContent>
@@ -90,37 +91,45 @@ export function OrderTable() {
 					type="date"
 					value={dateFrom}
 					onChange={(e) => updateParam("date_from", e.target.value)}
-					className="w-40"
+					className="w-40 rounded-lg border-border/60 bg-card text-[13px]"
 					placeholder="Du"
 				/>
 				<Input
 					type="date"
 					value={dateTo}
 					onChange={(e) => updateParam("date_to", e.target.value)}
-					className="w-40"
+					className="w-40 rounded-lg border-border/60 bg-card text-[13px]"
 					placeholder="Au"
 				/>
 			</div>
 
 			{/* Table */}
-			<div className="overflow-x-auto rounded-md border">
+			<div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
 				<Table>
 					<TableHeader>
-						<TableRow>
-							<TableHead>Référence</TableHead>
-							<TableHead>Date</TableHead>
-							<TableHead className="text-center">Articles</TableHead>
-							<TableHead className="tabular-nums text-right">Montant</TableHead>
-							<TableHead>Statut</TableHead>
+						<TableRow className="border-border/40 bg-muted/40 hover:bg-muted/40">
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Référence
+							</TableHead>
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Date
+							</TableHead>
+							<TableHead className="text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Articles
+							</TableHead>
+							<TableHead className="text-right text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70 tabular-nums">
+								Montant
+							</TableHead>
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Statut
+							</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{loading ? (
 							Array.from({ length: 6 }).map((_, i) => (
-								// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton rows
-								<TableRow key={i}>
+								<TableRow key={i} className="border-border/30">
 									{Array.from({ length: 5 }).map((_, j) => (
-										// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton cells
 										<TableCell key={j}>
 											<Skeleton className="h-4 w-full" />
 										</TableCell>
@@ -129,9 +138,9 @@ export function OrderTable() {
 							))
 						) : orders.length === 0 ? (
 							<TableRow>
-								<TableCell colSpan={5} className="py-12 text-center">
-									<p className="font-medium text-muted-foreground">Aucune commande</p>
-									<p className="text-sm text-muted-foreground">
+								<TableCell colSpan={5} className="py-16 text-center">
+									<p className="text-[13px] font-medium text-muted-foreground">Aucune commande</p>
+									<p className="mt-1 text-[12px] text-muted-foreground/70">
 										Vos commandes apparaîtront ici une fois passées.
 									</p>
 								</TableCell>
@@ -140,13 +149,15 @@ export function OrderTable() {
 							orders.map((order) => (
 								<TableRow
 									key={order.id}
-									className="cursor-pointer hover:bg-muted/50"
+									className="cursor-pointer border-border/30 transition-colors hover:bg-muted/40"
 									onClick={() => router.push(`/commandes/${order.id}`)}
 								>
-									<TableCell className="font-mono text-sm">{order.reference_id}</TableCell>
-									<TableCell>{new Date(order.created_at).toLocaleDateString("fr-FR")}</TableCell>
-									<TableCell className="text-center">—</TableCell>
-									<TableCell className="tabular-nums text-right">
+									<TableCell className="font-mono text-[13px]">{order.reference_id}</TableCell>
+									<TableCell className="text-[13px] text-muted-foreground">
+										{new Date(order.created_at).toLocaleDateString("fr-FR")}
+									</TableCell>
+									<TableCell className="text-center text-[13px] text-muted-foreground">—</TableCell>
+									<TableCell className="text-right text-[13px] font-semibold tabular-nums">
 										{order.montant_total.toLocaleString("fr-FR")} DA
 									</TableCell>
 									<TableCell>
@@ -161,16 +172,18 @@ export function OrderTable() {
 
 			{/* Pagination */}
 			<div className="flex items-center justify-between">
-				<span className="text-sm text-muted-foreground">
+				<span className="text-[13px] text-muted-foreground">
 					Page {page + 1} sur {totalPages}
 				</span>
-				<div className="flex gap-2">
+				<div className="flex gap-1.5">
 					<Button
 						variant="outline"
 						size="sm"
 						disabled={page === 0}
 						onClick={() => updateParam("page", String(page - 1))}
+						className="h-8 rounded-lg border-border/60 px-3 text-[12px]"
 					>
+						<ChevronLeft className="mr-1 h-3.5 w-3.5" />
 						Précédent
 					</Button>
 					<Button
@@ -178,8 +191,10 @@ export function OrderTable() {
 						size="sm"
 						disabled={page >= totalPages - 1}
 						onClick={() => updateParam("page", String(page + 1))}
+						className="h-8 rounded-lg border-border/60 px-3 text-[12px]"
 					>
 						Suivant
+						<ChevronRight className="ml-1 h-3.5 w-3.5" />
 					</Button>
 				</div>
 			</div>

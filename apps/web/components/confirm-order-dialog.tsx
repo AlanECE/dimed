@@ -62,29 +62,38 @@ export function ConfirmOrderDialog({ open, onOpenChange }: ConfirmOrderDialogPro
 
 	return (
 		<AlertDialog open={open} onOpenChange={onOpenChange}>
-			<AlertDialogContent className="max-w-lg">
+			<AlertDialogContent className="max-w-lg rounded-xl">
 				<AlertDialogHeader>
-					<AlertDialogTitle>Confirmer la commande</AlertDialogTitle>
-					<AlertDialogDescription>
-						Articles : {itemCount} — Montant total : {total.toLocaleString("fr-FR")} DA
+					<AlertDialogTitle className="font-heading font-bold">
+						Confirmer la commande
+					</AlertDialogTitle>
+					<AlertDialogDescription className="text-[13px]">
+						{itemCount} article{itemCount > 1 ? "s" : ""} — Montant total :{" "}
+						{total.toLocaleString("fr-FR")} DA
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 
-				<div className="overflow-x-auto rounded-md border">
+				<div className="overflow-hidden rounded-lg border border-border/60">
 					<Table>
 						<TableHeader>
-							<TableRow>
-								<TableHead>Désignation</TableHead>
-								<TableHead className="text-center">Qté</TableHead>
-								<TableHead className="text-right">Prix</TableHead>
+							<TableRow className="border-border/40 bg-muted/40 hover:bg-muted/40">
+								<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+									Désignation
+								</TableHead>
+								<TableHead className="text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+									Qté
+								</TableHead>
+								<TableHead className="text-right text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+									Prix
+								</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{items.map((item) => (
-								<TableRow key={item.medicament.id}>
-									<TableCell className="text-sm">{item.medicament.designation}</TableCell>
-									<TableCell className="text-center tabular-nums">{item.qte}</TableCell>
-									<TableCell className="text-right tabular-nums">
+								<TableRow key={item.medicament.id} className="border-border/30">
+									<TableCell className="text-[13px]">{item.medicament.designation}</TableCell>
+									<TableCell className="text-center text-[13px] tabular-nums">{item.qte}</TableCell>
+									<TableCell className="text-right text-[13px] font-semibold tabular-nums">
 										{(item.medicament.ppa * item.qte).toLocaleString("fr-FR")} DA
 									</TableCell>
 								</TableRow>
@@ -94,8 +103,14 @@ export function ConfirmOrderDialog({ open, onOpenChange }: ConfirmOrderDialogPro
 				</div>
 
 				<AlertDialogFooter>
-					<AlertDialogCancel disabled={submitting}>Annuler</AlertDialogCancel>
-					<AlertDialogAction onClick={handleConfirm} disabled={submitting}>
+					<AlertDialogCancel disabled={submitting} className="rounded-lg">
+						Annuler
+					</AlertDialogCancel>
+					<AlertDialogAction
+						onClick={handleConfirm}
+						disabled={submitting}
+						className="rounded-lg bg-primary font-semibold shadow-sm hover:brightness-110"
+					>
 						{submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 						Confirmer la commande
 					</AlertDialogAction>

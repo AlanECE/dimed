@@ -5,11 +5,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser
-from app.auth.schemas import LoginRequest, UserResponse
+from app.auth.schemas import (
+    ChangePasswordRequest,
+    LoginRequest,
+    UpdateProfileRequest,
+    UserResponse,
+)
 from app.auth.service import (
     create_access_token,
     create_refresh_token,
     decode_access_token,
+    hash_password,
+    revoke_all_user_tokens,
     rotate_refresh_token,
     validate_refresh_token,
     verify_password,
@@ -37,13 +44,13 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         secure=settings.cookie_secure,
         samesite="lax",
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
-        path="/auth/refresh",
+        path="/auth",
     )
 
 
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token", path="/auth/refresh")
+    response.delete_cookie("refresh_token", path="/auth")
 
 
 @router.post("/login")
@@ -119,9 +126,12 @@ async def logout(
 ) -> dict:
     from app.auth.service import blacklist_token, redis_client
 
+    user_id: str | None = None
+
     if access_token:
         try:
             payload = decode_access_token(access_token)
+            user_id = payload.get("sub")
             jti = payload.get("jti")
             exp = payload.get("exp", 0)
             if jti:
@@ -134,6 +144,8 @@ async def logout(
 
     if refresh_token:
         redis_client.delete(f"refresh:{refresh_token}")
+        if user_id:
+            redis_client.srem(f"user_tokens:{user_id}", refresh_token)
 
     _clear_auth_cookies(response)
 
@@ -143,3 +155,44 @@ async def logout(
 @router.get("/me")
 async def me(current_user: CurrentUser) -> UserResponse:
     return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me")
+async def update_profile(
+    body: UpdateProfileRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> UserResponse:
+    update_data = body.model_dump(exclude_unset=True)
+    if not update_data:
+        return UserResponse.model_validate(current_user)
+
+    for field, value in update_data.items():
+        setattr(current_user, field, value)
+
+    db.info["actor_id"] = str(current_user.id)
+    await db.commit()
+    await db.refresh(current_user)
+    return UserResponse.model_validate(current_user)
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    if not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    current_user.password_hash = hash_password(body.new_password)
+    db.info["actor_id"] = str(current_user.id)
+    await db.commit()
+
+    # Revoke all existing refresh tokens so stolen tokens become invalid
+    revoke_all_user_tokens(str(current_user.id))
+
+    return {"message": "Password changed successfully"}

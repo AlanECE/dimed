@@ -250,26 +250,11 @@ export default function OperatorOrderDetailPage() {
 				</div>
 			)}
 
-			{/* Camion assignment — only for Acceptée */}
-			{order.statut === "acceptee" && (
-				<div className="flex items-center gap-3">
-					<span className="text-sm font-medium">Camion :</span>
-					<Select
-						onValueChange={(v) => handleAssignCamion(v as string | null)}
-						disabled={assigning}
-					>
-						<SelectTrigger className="w-64">
-							<SelectValue placeholder="Sélectionner un camion" />
-						</SelectTrigger>
-						<SelectContent>
-							{camions.map((c) => (
-								<SelectItem key={c.id} value={c.id}>
-									{c.nom} ({c.plaque})
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-					{assigning && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+			{/* Ligne de route — read only, assigned by controller */}
+			{order.camion_nom && (
+				<div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-4 py-2.5">
+					<span className="text-[13px] font-medium text-muted-foreground">Ligne de route :</span>
+					<span className="text-[13px] font-semibold">{order.camion_nom}</span>
 				</div>
 			)}
 		</div>

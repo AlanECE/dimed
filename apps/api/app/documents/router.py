@@ -1,24 +1,137 @@
-from datetime import date
+import base64
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from sqlalchemy import select
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser
 from app.db.session import get_db
-from app.documents.service import create_route_sheet, get_route_sheet
+from app.documents.service import (
+    create_route_sheet,
+    get_route_sheet,
+    get_route_sheet_orders,
+)
 from app.models.camion import Camion
-from app.models.commande import Commande
+from app.models.commande import Commande, OrderStatus
 from app.models.document import BonDeLivraison, Facture, FeuilleDeRoute
+from app.models.user import User
 
 STORAGE_ROOT = Path(__file__).resolve().parents[3] / "storage" / "documents"
 
 router = APIRouter()
+
+
+def _require_route_sheet_access(current_user: User, feuille: FeuilleDeRoute) -> None:
+    if current_user.role.value in ("operatrice", "admin"):
+        return
+    if current_user.role.value == "livreur" and feuille.livreur_id == current_user.id:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
+@router.get("/factures")
+async def list_factures(
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    if current_user.role.value not in ("pharmacien", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    query = select(Facture, Commande).join(Commande, Facture.commande_id == Commande.id)
+
+    if current_user.role.value == "pharmacien":
+        query = query.where(Commande.pharmacien_id == current_user.id)
+
+    if date_from:
+        query = query.where(Facture.date_emission >= date_from)
+    if date_to:
+        query = query.where(Facture.date_emission <= datetime.combine(date_to, time.max))
+
+    count_q = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_q)).scalar() or 0
+
+    query = query.order_by(Facture.date_emission.desc()).offset(offset).limit(min(limit, 100))
+    result = await db.execute(query)
+    rows = result.all()
+
+    # Collect pharmacien names
+    pharmacien_ids = {r.Commande.pharmacien_id for r in rows}
+    pharmacien_map: dict = {}
+    if pharmacien_ids:
+        users_result = await db.execute(select(User).where(User.id.in_(pharmacien_ids)))
+        pharmacien_map = {u.id: u.nom for u in users_result.scalars().all()}
+
+    items = []
+    for row in rows:
+        f = row.Facture
+        c = row.Commande
+        items.append(
+            {
+                "id": str(f.id),
+                "reference_id": f.reference_id,
+                "commande_id": str(f.commande_id),
+                "commande_reference": c.reference_id,
+                "pharmacien_nom": pharmacien_map.get(c.pharmacien_id, "—"),
+                "date_emission": f.date_emission.isoformat(),
+                "montant_ht": float(f.montant_ht),
+                "montant_ttc": float(f.montant_ttc),
+            }
+        )
+
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+@router.get("/bons-livraison")
+async def list_bons_livraison(
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    if current_user.role.value not in ("pharmacien", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    query = select(BonDeLivraison, Commande).join(
+        Commande, BonDeLivraison.commande_id == Commande.id
+    )
+
+    if current_user.role.value == "pharmacien":
+        query = query.where(Commande.pharmacien_id == current_user.id)
+
+    count_q = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_q)).scalar() or 0
+
+    query = (
+        query.order_by(BonDeLivraison.date_emission.desc()).offset(offset).limit(min(limit, 100))
+    )
+    result = await db.execute(query)
+    rows = result.all()
+
+    items = []
+    for row in rows:
+        bl = row.BonDeLivraison
+        c = row.Commande
+        items.append(
+            {
+                "id": str(bl.id),
+                "code_barre": bl.code_barre,
+                "commande_id": str(bl.commande_id),
+                "commande_reference": c.reference_id,
+                "date_emission": bl.date_emission.isoformat(),
+            }
+        )
+
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/facture/{commande_id}")
@@ -27,6 +140,9 @@ async def download_facture(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> FileResponse:
+    if current_user.role.value not in ("pharmacien", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
     result = await db.execute(select(Facture).where(Facture.commande_id == commande_id))
     facture = result.scalar_one_or_none()
     if not facture:
@@ -39,7 +155,9 @@ async def download_facture(
         if not commande or commande.pharmacien_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your order")
 
-    file_path = STORAGE_ROOT / "factures" / f"{facture.reference_id}.pdf"
+    file_path = (STORAGE_ROOT / "factures" / f"{facture.reference_id}.pdf").resolve()
+    if not file_path.is_relative_to(STORAGE_ROOT.resolve()):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reference")
     if not file_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF not generated yet")
 
@@ -66,7 +184,9 @@ async def download_bl(
     if not bl:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="BL not found")
 
-    file_path = STORAGE_ROOT / "bls" / f"{bl.code_barre}.pdf"
+    file_path = (STORAGE_ROOT / "bls" / f"{bl.code_barre}.pdf").resolve()
+    if not file_path.is_relative_to(STORAGE_ROOT.resolve()):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reference")
     if not file_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF not generated yet")
 
@@ -78,7 +198,7 @@ async def download_bl(
 
 
 class CreateRouteSheetRequest(BaseModel):
-    camion_id: str
+    camion_id: UUID
     date: date
 
 
@@ -115,6 +235,9 @@ async def list_feuilles_route(
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> dict:
     """List all route sheets with camion info and assigned commandes."""
+    if current_user.role.value not in ("operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operatrice/admin only")
+
     result = await db.execute(select(FeuilleDeRoute).order_by(FeuilleDeRoute.date.desc()))
     feuilles = result.scalars().all()
 
@@ -128,8 +251,7 @@ async def list_feuilles_route(
     sheets = []
     for f in feuilles:
         camion = camions_map.get(f.camion_id)
-        cmd_result = await db.execute(select(Commande).where(Commande.camion_id == f.camion_id))
-        commandes = cmd_result.scalars().all()
+        commandes = await get_route_sheet_orders(db, f)
 
         sheets.append(
             {
@@ -156,6 +278,291 @@ async def list_feuilles_route(
     return {"feuilles": sheets, "total": len(sheets)}
 
 
+@router.get("/feuilles-route/today")
+async def get_today_route_sheet(
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Get the route sheet assigned to this livreur for today (read-only)."""
+    if current_user.role.value not in ("livreur", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Livreur/admin only")
+
+    today = date.today()
+
+    result = await db.execute(
+        select(FeuilleDeRoute).where(
+            FeuilleDeRoute.livreur_id == current_user.id,
+            FeuilleDeRoute.date == today,
+        )
+    )
+    feuille = result.scalar_one_or_none()
+
+    if not feuille:
+        return {"feuille": None}
+
+    # Load camion info
+    camion_result = await db.execute(select(Camion).where(Camion.id == feuille.camion_id))
+    camion = camion_result.scalar_one_or_none()
+
+    # Load commandes linked to this route sheet only.
+    commandes = await get_route_sheet_orders(
+        db,
+        feuille,
+        statuses=[
+            OrderStatus.PRETE,
+            OrderStatus.EN_ROUTE,
+            OrderStatus.LIVREE,
+            OrderStatus.REFUSEE,
+            OrderStatus.RETOURNEE,
+            OrderStatus.LIVREE_PARTIELLEMENT,
+        ],
+    )
+
+    # Load pharmacien info
+    pharm_ids = {c.pharmacien_id for c in commandes}
+    users_map: dict[UUID, User] = {}
+    if pharm_ids:
+        users_result = await db.execute(select(User).where(User.id.in_(pharm_ids)))
+        users_map = {u.id: u for u in users_result.scalars().all()}
+
+    return {
+        "feuille": {
+            "id": str(feuille.id),
+            "camion_id": str(feuille.camion_id),
+            "camion_nom": camion.nom if camion else "Inconnu",
+            "camion_plaque": camion.plaque if camion else "",
+            "date": str(feuille.date),
+            "ligne": feuille.ligne,
+            "compteurs": feuille.compteurs,
+            "chargement_valide": feuille.chargement_valide,
+            "signature_expedition": feuille.signature_expedition is not None,
+            "signature_chauffeur": feuille.signature_chauffeur is not None,
+            "commandes": [
+                {
+                    "id": str(c.id),
+                    "reference_id": c.reference_id,
+                    "montant_total": float(c.montant_total),
+                    "pharmacien_id": str(c.pharmacien_id),
+                    "pharmacien_nom": (
+                        users_map[c.pharmacien_id].nom if c.pharmacien_id in users_map else "—"
+                    ),
+                    "pharmacien_adresse": (
+                        users_map[c.pharmacien_id].adresse if c.pharmacien_id in users_map else None
+                    ),
+                    "pharmacien_secteur": (
+                        users_map[c.pharmacien_id].secteur if c.pharmacien_id in users_map else None
+                    ),
+                    "statut": c.statut.value,
+                    "signature_pharmacien": c.signature_pharmacien is not None,
+                }
+                for c in commandes
+            ],
+        }
+    }
+
+
+@router.post("/feuilles-route/claim-today")
+async def claim_today_route_sheet(
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Livreur explicitly claims an unassigned route sheet for today."""
+    if current_user.role.value not in ("livreur",):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Livreur only")
+
+    today = date.today()
+
+    # Check the livreur doesn't already have a sheet
+    existing = await db.execute(
+        select(FeuilleDeRoute).where(
+            FeuilleDeRoute.livreur_id == current_user.id,
+            FeuilleDeRoute.date == today,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have a route sheet for today",
+        )
+
+    # Find unassigned sheets for today that have orders
+    result = await db.execute(
+        select(FeuilleDeRoute).where(
+            FeuilleDeRoute.date == today,
+            FeuilleDeRoute.livreur_id.is_(None),
+        )
+    )
+    available = result.scalars().all()
+
+    if not available:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No unassigned route sheet available for today",
+        )
+    if len(available) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Multiple unassigned route sheets — operator must assign explicitly",
+        )
+
+    feuille = available[0]
+    db.info["actor_id"] = str(current_user.id)
+    feuille.livreur_id = current_user.id
+    await db.commit()
+    await db.refresh(feuille)
+
+    return {"status": "ok", "feuille_id": str(feuille.id)}
+
+
+_MAX_SIGNATURE_B64_LEN = 500_000  # ~375 KB decoded
+
+
+class SignRouteSheetRequest(BaseModel):
+    type: str = Field(pattern=r"^(expedition|chauffeur)$")
+    signature: str = Field(
+        min_length=10,
+        max_length=_MAX_SIGNATURE_B64_LEN,
+        description="Base64-encoded PNG signature",
+    )
+
+
+@router.patch("/feuilles-route/{feuille_id}/sign")
+async def sign_route_sheet(
+    feuille_id: UUID,
+    body: SignRouteSheetRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Sign the route sheet (expedition or chauffeur signature)."""
+    if current_user.role.value not in ("livreur", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    feuille = await get_route_sheet(db, feuille_id)
+    if not feuille:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Route sheet not found")
+    _require_route_sheet_access(current_user, feuille)
+
+    db.info["actor_id"] = str(current_user.id)
+    try:
+        sig_bytes = base64.b64decode(body.signature)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid base64 signature",
+        ) from exc
+
+    if body.type == "expedition":
+        feuille.signature_expedition = sig_bytes
+    else:
+        feuille.signature_chauffeur = sig_bytes
+
+    await db.commit()
+    return {"status": "ok", "type": body.type}
+
+
+class ValidateLoadingRequest(BaseModel):
+    colis_checked: list[str] = Field(description="List of checked order reference IDs")
+
+
+@router.patch("/feuilles-route/{feuille_id}/validate-loading")
+async def validate_loading(
+    feuille_id: UUID,
+    body: ValidateLoadingRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Validate loading checklist for a route sheet."""
+    if current_user.role.value not in ("livreur", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    feuille = await get_route_sheet(db, feuille_id)
+    if not feuille:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Route sheet not found")
+    _require_route_sheet_access(current_user, feuille)
+
+    # Verify all ready orders linked to this route sheet are checked.
+    commandes = await get_route_sheet_orders(
+        db,
+        feuille,
+        statuses=[OrderStatus.PRETE],
+    )
+    order_refs = {c.reference_id for c in commandes}
+
+    if not order_refs.issubset(set(body.colis_checked)):
+        missing = order_refs - set(body.colis_checked)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Missing colis: {', '.join(missing)}",
+        )
+
+    db.info["actor_id"] = str(current_user.id)
+    feuille.chargement_valide = True
+    await db.commit()
+    return {"status": "ok", "chargement_valide": True}
+
+
+@router.get("/feuilles-route/{feuille_id}/pdf")
+async def download_feuille_route_pdf(
+    feuille_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    """Generate and download feuille de route PDF."""
+    from fastapi.responses import FileResponse
+
+    from app.documents.pdf_generator import generate_feuille_route_pdf
+
+    feuille = await get_route_sheet(db, feuille_id)
+    if not feuille:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Route sheet not found",
+        )
+    _require_route_sheet_access(current_user, feuille)
+
+    camion_result = await db.execute(select(Camion).where(Camion.id == feuille.camion_id))
+    camion = camion_result.scalar_one_or_none()
+
+    commandes = await get_route_sheet_orders(db, feuille)
+
+    pharm_ids = {c.pharmacien_id for c in commandes}
+    users_map: dict[UUID, User] = {}
+    if pharm_ids:
+        u_result = await db.execute(select(User).where(User.id.in_(pharm_ids)))
+        users_map = {u.id: u for u in u_result.scalars().all()}
+
+    cmd_data = []
+    for c in commandes:
+        pharm = users_map.get(c.pharmacien_id)
+        cmd_data.append(
+            {
+                "client": pharm.nom if pharm else "—",
+                "commande_ref": c.reference_id,
+                "facture_ref": "—",
+                "n_prelv": "—",
+                "c_std": "",
+                "sc_std": "",
+                "bl_std_c_frg": "",
+                "sac_frg": "",
+            }
+        )
+
+    path = generate_feuille_route_pdf(
+        date_str=str(feuille.date),
+        camion_nom=camion.nom if camion else "—",
+        camion_plaque=camion.plaque if camion else "—",
+        ligne=feuille.ligne,
+        commandes=cmd_data,
+        compteurs=feuille.compteurs,
+    )
+
+    return FileResponse(
+        path=str(path),
+        media_type="application/pdf",
+        filename=f"feuille_route_{feuille.date}.pdf",
+    )
+
+
 @router.get("/feuilles-route/{feuille_id}")
 async def get_feuille_route(
     feuille_id: UUID,
@@ -164,5 +571,9 @@ async def get_feuille_route(
 ) -> RouteSheetResponse:
     feuille = await get_route_sheet(db, feuille_id)
     if not feuille:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Route sheet not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Route sheet not found",
+        )
+    _require_route_sheet_access(current_user, feuille)
     return RouteSheetResponse.model_validate(feuille)

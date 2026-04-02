@@ -9,3 +9,28 @@ __pycache__/
 .env.local
 *.egg-info/
 .ruff_cache/
+
+# Build artifacts
+tsconfig.tsbuildinfo
+package-lock.json
+
+# IDE / tooling
+.claude/
+.planning/
+.playwright-mcp/
+.playwright-cli/
+apps/api/.playwright-cli/
+apps/web/.playwright-cli/
+
+# Documents & media (not source code)
+OCR/
+*.docx
+*.xlsx
+*.HEIC
+*.PNG
+*.png
+apps/storage/documents/
+
+# Personal / temp files
+a faire.md
+.~lock.*

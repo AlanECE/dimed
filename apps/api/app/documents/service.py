@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+from collections.abc import Iterable
+from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -6,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.documents.pdf_generator import generate_bl_pdf, generate_facture_pdf
-from app.models.commande import Commande
+from app.models.commande import Commande, OrderStatus
 from app.models.document import BonDeLivraison, Facture, FeuilleDeRoute
 from app.models.references import next_bl_ref, next_facture_ref
 from app.models.user import User
@@ -78,28 +79,59 @@ async def generate_order_documents(
 
 
 async def create_route_sheet(db: AsyncSession, camion_id: UUID, date: datetime) -> FeuilleDeRoute:
+    # Normalize to date object
+    sheet_date = date.date() if isinstance(date, datetime) else date
+
     # Check no duplicate active sheet (RG-1-05)
     result = await db.execute(
         select(FeuilleDeRoute).where(
             FeuilleDeRoute.camion_id == camion_id,
-            FeuilleDeRoute.date == date.date() if isinstance(date, datetime) else date,
+            FeuilleDeRoute.date == sheet_date,
         )
     )
     existing = result.scalar_one_or_none()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Route sheet already exists for truck {camion_id} on {date}",
+            detail=f"Route sheet already exists for truck {camion_id} on {sheet_date}",
         )
 
     feuille = FeuilleDeRoute(
         id=uuid4(),
         camion_id=camion_id,
-        date=date.date() if isinstance(date, datetime) else date,
+        date=sheet_date,
         compteurs={"colis_std": 0, "sachets_std": 0, "colis_frg": 0, "sachets_frg": 0},
     )
     db.add(feuille)
     return feuille
+
+
+async def get_or_create_route_sheet(
+    db: AsyncSession, camion_id: UUID, target_date: date
+) -> FeuilleDeRoute:
+    result = await db.execute(
+        select(FeuilleDeRoute).where(
+            FeuilleDeRoute.camion_id == camion_id,
+            FeuilleDeRoute.date == target_date,
+        )
+    )
+    feuille = result.scalar_one_or_none()
+    if feuille:
+        return feuille
+    return await create_route_sheet(db, camion_id, target_date)
+
+
+async def get_route_sheet_orders(
+    db: AsyncSession,
+    feuille: FeuilleDeRoute,
+    statuses: Iterable[OrderStatus] | None = None,
+) -> list[Commande]:
+    query = select(Commande).where(Commande.feuille_route_id == feuille.id)
+    if statuses is not None:
+        query = query.where(Commande.statut.in_(list(statuses)))
+    query = query.order_by(Commande.created_at.asc())
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 async def get_route_sheet(db: AsyncSession, feuille_id: UUID) -> FeuilleDeRoute | None:

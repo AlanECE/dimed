@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { useMedications } from "@/hooks/use-medications";
 import { useCart } from "@/lib/cart";
-import { Plus, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 const PAGE_SIZE = 20;
@@ -39,7 +39,6 @@ export function MedicationTable() {
 
 	const { addItem } = useCart();
 
-	// Extract unique values for client-side filters
 	const formes = useMemo(() => {
 		const set = new Set(medications.map((m) => m.forme).filter(Boolean));
 		return Array.from(set).sort() as string[];
@@ -50,7 +49,6 @@ export function MedicationTable() {
 		return Array.from(set).sort() as string[];
 	}, [medications]);
 
-	// Apply client-side filters
 	const filtered = useMemo(() => {
 		return medications.filter((m) => {
 			if (formeFilter !== "all" && m.forme !== formeFilter) return false;
@@ -65,7 +63,7 @@ export function MedicationTable() {
 		<div className="flex flex-1 flex-col gap-4">
 			{/* Search */}
 			<div className="relative">
-				<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+				<Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
 				<Input
 					placeholder="Rechercher un médicament..."
 					value={searchTerm}
@@ -73,14 +71,14 @@ export function MedicationTable() {
 						setSearchTerm(e.target.value);
 						setPage(0);
 					}}
-					className="pl-10"
+					className="h-11 rounded-xl border-border/60 bg-card pl-10 text-sm shadow-sm transition-all focus:border-primary/30 focus:shadow-md focus:shadow-primary/5"
 				/>
 			</div>
 
 			{/* Filters */}
 			<div className="flex gap-3">
 				<Select value={formeFilter} onValueChange={(v) => setFormeFilter(v ?? "all")}>
-					<SelectTrigger className="w-48">
+					<SelectTrigger className="w-48 rounded-lg border-border/60 bg-card text-[13px]">
 						<SelectValue placeholder="Forme" />
 					</SelectTrigger>
 					<SelectContent>
@@ -94,7 +92,7 @@ export function MedicationTable() {
 				</Select>
 
 				<Select value={fabricantFilter} onValueChange={(v) => setFabricantFilter(v ?? "all")}>
-					<SelectTrigger className="w-48">
+					<SelectTrigger className="w-48 rounded-lg border-border/60 bg-card text-[13px]">
 						<SelectValue placeholder="Fabricant" />
 					</SelectTrigger>
 					<SelectContent>
@@ -109,27 +107,39 @@ export function MedicationTable() {
 			</div>
 
 			{/* Table */}
-			<div className="overflow-x-auto rounded-md border">
+			<div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
 				<Table>
 					<TableHeader>
-						<TableRow>
-							<TableHead>Désignation</TableHead>
-							<TableHead>DCI</TableHead>
-							<TableHead>Dosage</TableHead>
-							<TableHead>Forme</TableHead>
-							<TableHead className="tabular-nums text-right">PPA</TableHead>
-							<TableHead>Fabricant</TableHead>
-							<TableHead className="w-16" />
+						<TableRow className="border-border/40 bg-muted/40 hover:bg-muted/40">
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Désignation
+							</TableHead>
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								DCI
+							</TableHead>
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Dosage
+							</TableHead>
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Forme
+							</TableHead>
+							<TableHead className="text-right text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70 tabular-nums">
+								PPA
+							</TableHead>
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Fabricant
+							</TableHead>
+							<TableHead className="text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Stock
+							</TableHead>
+							<TableHead className="w-14" />
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{loading ? (
-							// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton rows
 							Array.from({ length: 6 }).map((_, i) => (
-								// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton rows
-								<TableRow key={`skeleton-${i}`}>
-									{Array.from({ length: 7 }).map((_, j) => (
-										// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton cells
+								<TableRow key={`skeleton-${i}`} className="border-border/30">
+									{Array.from({ length: 8 }).map((_, j) => (
 										<TableCell key={`cell-${i}-${j}`}>
 											<Skeleton className="h-4 w-full" />
 										</TableCell>
@@ -138,25 +148,45 @@ export function MedicationTable() {
 							))
 						) : filtered.length === 0 ? (
 							<TableRow>
-								<TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-									Aucun médicament trouvé
+								<TableCell colSpan={8} className="py-12 text-center">
+									<p className="text-[13px] font-medium text-muted-foreground">
+										Aucun médicament trouvé
+									</p>
 								</TableCell>
 							</TableRow>
 						) : (
-							filtered.map((med) => (
-								<TableRow key={med.id} className="hover:bg-muted/50">
-									<TableCell className="font-medium">{med.designation}</TableCell>
-									<TableCell>{med.dci ?? "—"}</TableCell>
-									<TableCell>{med.dosage ?? "—"}</TableCell>
-									<TableCell>{med.forme ?? "—"}</TableCell>
-									<TableCell className="tabular-nums text-right">
+							filtered.map((med, i) => (
+								<TableRow
+									key={med.id}
+									className="animate-fade-in border-border/30 transition-colors hover:bg-muted/40"
+									style={{ animationDelay: `${i * 20}ms` }}
+								>
+									<TableCell className="text-[13px] font-semibold">{med.designation}</TableCell>
+									<TableCell className="text-[13px] text-muted-foreground">
+										{med.dci ?? "—"}
+									</TableCell>
+									<TableCell className="text-[13px] text-muted-foreground">
+										{med.dosage ?? "—"}
+									</TableCell>
+									<TableCell className="text-[13px] text-muted-foreground">
+										{med.forme ?? "—"}
+									</TableCell>
+									<TableCell className="text-right text-[13px] font-semibold tabular-nums">
 										{med.ppa.toLocaleString("fr-FR")} DA
 									</TableCell>
-									<TableCell>{med.fabricant ?? "—"}</TableCell>
+									<TableCell className="text-[13px] text-muted-foreground">
+										{med.fabricant ?? "—"}
+									</TableCell>
+									<TableCell
+										className={`text-center text-[13px] font-semibold tabular-nums ${med.stock_quantity === 0 ? "text-red-500" : med.stock_quantity < 10 ? "text-amber-600" : "text-emerald-600"}`}
+									>
+										{med.stock_quantity}
+									</TableCell>
 									<TableCell>
 										<Button
 											variant="ghost"
 											size="icon"
+											className="h-8 w-8 rounded-lg text-primary/70 hover:bg-primary/10 hover:text-primary"
 											onClick={() => addItem(med)}
 											aria-label={`Ajouter ${med.designation}`}
 										>
@@ -172,16 +202,18 @@ export function MedicationTable() {
 
 			{/* Pagination */}
 			<div className="flex items-center justify-between">
-				<span className="text-sm text-muted-foreground">
+				<span className="text-[13px] text-muted-foreground">
 					Page {page + 1} sur {totalPages}
 				</span>
-				<div className="flex gap-2">
+				<div className="flex gap-1.5">
 					<Button
 						variant="outline"
 						size="sm"
 						disabled={page === 0}
 						onClick={() => setPage((p) => p - 1)}
+						className="h-8 rounded-lg border-border/60 px-3 text-[12px]"
 					>
+						<ChevronLeft className="mr-1 h-3.5 w-3.5" />
 						Précédent
 					</Button>
 					<Button
@@ -189,8 +221,10 @@ export function MedicationTable() {
 						size="sm"
 						disabled={page >= totalPages - 1}
 						onClick={() => setPage((p) => p + 1)}
+						className="h-8 rounded-lg border-border/60 px-3 text-[12px]"
 					>
 						Suivant
+						<ChevronRight className="ml-1 h-3.5 w-3.5" />
 					</Button>
 				</div>
 			</div>

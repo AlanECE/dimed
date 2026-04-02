@@ -100,10 +100,32 @@ async def transition_order(
         commande.operatrice_id = actor_id
         commande.date_validation = datetime.now(UTC)
 
+        # Validate stock before generating downstream documents or mutating inventory.
+        insufficient_stock: list[str] = []
+        medicament_ids = [ln.medicament_id for ln in commande.lignes]
+        med_result = await db.execute(select(Medicament).where(Medicament.id.in_(medicament_ids)))
+        medicaments = {med.id: med for med in med_result.scalars().all()}
+        for ln in commande.lignes:
+            med = medicaments.get(ln.medicament_id)
+            if not med or med.stock_quantity < ln.qte_demandee:
+                insufficient_stock.append(ln.designation)
+
+        if insufficient_stock:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=("Insufficient stock for: " + ", ".join(insufficient_stock)),
+            )
+
         # Auto-generate documents on acceptance
         from app.documents.service import generate_order_documents
 
         await generate_order_documents(db, commande)
+
+        # Decrement stock for each line
+        for ln in commande.lignes:
+            med = medicaments.get(ln.medicament_id)
+            if med:
+                med.stock_quantity -= ln.qte_demandee
 
     await db.flush()
 

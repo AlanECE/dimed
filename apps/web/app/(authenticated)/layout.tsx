@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
 import { CartProvider } from "@/lib/cart";
+import { Pill } from "lucide-react";
 
 export default function AuthenticatedLayout({
 	children,
@@ -15,8 +16,11 @@ export default function AuthenticatedLayout({
 
 	if (loading) {
 		return (
-			<div className="flex h-screen items-center justify-center">
-				<Skeleton className="h-8 w-48" />
+			<div className="flex h-screen flex-col items-center justify-center gap-4 bg-background">
+				<div className="flex h-12 w-12 animate-pulse items-center justify-center rounded-2xl bg-gradient-to-br from-[#0F766E] to-[#0D9488]">
+					<Pill className="h-6 w-6 text-white" />
+				</div>
+				<Skeleton className="h-4 w-32" />
 			</div>
 		);
 	}
@@ -25,13 +29,16 @@ export default function AuthenticatedLayout({
 		<CartProvider>
 			<div className="flex h-screen">
 				<Sidebar />
-				<div className="flex flex-1 flex-col">
-					<header className="flex items-center justify-end gap-3 border-b px-6 py-2">
+				<div className="flex flex-1 flex-col overflow-hidden">
+					<header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b border-border/60 bg-card/50 px-6 backdrop-blur-sm">
 						<NotificationBell />
-						<span className="text-sm text-slate-600">{user?.nom || user?.email}</span>
+						<div className="h-5 w-px bg-border" />
+						<span className="text-[13px] font-medium text-muted-foreground">
+							{user?.nom || user?.email}
+						</span>
 					</header>
-					<main className="flex-1 overflow-y-auto bg-background p-6">
-						<div className="mx-auto max-w-7xl">{children}</div>
+					<main className="flex-1 overflow-y-auto p-6">
+						<div className="mx-auto max-w-7xl animate-fade-in-up">{children}</div>
 					</main>
 				</div>
 			</div>
