@@ -1,3 +1,13 @@
+export type UserRole =
+	| "admin"
+	| "pharmacien"
+	| "operatrice"
+	| "preparateur"
+	| "controleur"
+	| "livreur";
+
+export type SignupRole = Exclude<UserRole, "admin">;
+
 export type UserResponse = {
 	id: string;
 	email: string;
@@ -5,13 +15,35 @@ export type UserResponse = {
 	role: string;
 	adresse: string | null;
 	secteur: string | null;
+	telephone: string | null;
 	is_active: boolean;
+	is_email_verified: boolean;
+	oauth_provider: string | null;
 };
 
 export type UpdateProfileRequest = {
 	nom?: string;
 	adresse?: string;
 	secteur?: string;
+	telephone?: string;
+};
+
+export type SignupPayload = {
+	nom: string;
+	email: string;
+	password: string;
+	role: SignupRole;
+	adresse?: string;
+	secteur?: string;
+	telephone?: string;
+};
+
+export type GoogleAuthPayload = {
+	credential: string;
+	role?: SignupRole;
+	adresse?: string;
+	secteur?: string;
+	telephone?: string;
 };
 
 export type ChangePasswordRequest = {
@@ -39,7 +71,24 @@ export type LigneResponse = {
 	designation: string;
 	qte_demandee: number;
 	prix_unitaire: number;
+	remise_pct: number;
 	n_lot: string | null;
+};
+
+export type UpdateRemisesRequest = {
+	lines: { ligne_id: string; remise_pct: number }[];
+};
+
+export type CaddieResponse = {
+	id: string;
+	numero: string;
+	created_at: string;
+};
+
+export type BulkClaimPayload = {
+	commande_ids: string[];
+	preparateur_id: string | null;
+	caddies: { commande_id: string; numeros: string[] }[];
 };
 
 export type OrderResponse = {
@@ -49,6 +98,8 @@ export type OrderResponse = {
 	montant_total: number;
 	pharmacien_id: string;
 	operatrice_id: string | null;
+	preparateur_id: string | null;
+	preparateur_nom: string | null;
 	commercial: string | null;
 	created_at: string;
 	date_validation: string | null;
@@ -56,6 +107,7 @@ export type OrderResponse = {
 	camion_nom: string | null;
 	pharmacien_nom: string | null;
 	pharmacien_email: string | null;
+	caddies: CaddieResponse[];
 };
 
 export type OrderDetailResponse = OrderResponse & {
@@ -211,6 +263,7 @@ export type LignePreparationResponse = {
 	prix_unitaire: number;
 	n_lot: string | null;
 	verifie: boolean;
+	ocr_verifie: boolean;
 };
 
 export type PreparationDetailResponse = {

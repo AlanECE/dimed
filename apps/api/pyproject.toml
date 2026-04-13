@@ -19,6 +19,11 @@ dependencies = [
     "reportlab>=4.0",
     "python-barcode[images]>=0.15",
     "python-multipart>=0.0.9",
+    "email-validator>=2.2.0",
+    "google-auth>=2.35.0",
+    "fastapi-mail>=1.4.2",
+    "slowapi>=0.1.9",
+    "num2words>=0.5.14",
 ]
 
 [tool.setuptools.packages.find]

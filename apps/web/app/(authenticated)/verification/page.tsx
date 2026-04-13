@@ -224,7 +224,7 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 		usePreparation();
 	const { camions } = useCamions();
 	const [saving, setSaving] = useState(false);
-	const [selectedLigne, setSelectedLigne] = useState("");
+	const [selectedLigne, setSelectedLigne] = useState(order.camion_id ?? "");
 
 	// Controller's blind counts + per-line check status
 	const [controlCounts, setControlCounts] = useState<Record<string, number | null>>({});
@@ -233,6 +233,10 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 	useEffect(() => {
 		fetchLignes(order.id);
 	}, [order.id, fetchLignes]);
+
+	useEffect(() => {
+		setSelectedLigne(order.camion_id ?? "");
+	}, [order.camion_id]);
 
 	useEffect(() => {
 		if (detail?.lignes) {
@@ -441,10 +445,7 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 				<div className="flex items-center gap-3">
 					<Route className="h-4 w-4 text-muted-foreground" />
 					<span className="text-[13px] font-medium">Ligne de route</span>
-					<Select
-						value={selectedLigne || undefined}
-						onValueChange={(v) => setSelectedLigne(v ?? "")}
-					>
+					<Select value={selectedLigne} onValueChange={(value) => setSelectedLigne(value ?? "")}>
 						<SelectTrigger className="w-64 rounded-lg border-border/60 bg-background text-[13px]">
 							<SelectValue placeholder="Choisir une ligne..." />
 						</SelectTrigger>

@@ -1,5 +1,6 @@
 import base64
 from datetime import date, datetime, time
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -11,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser
+from app.commandes.schemas import UpdateRemisesRequest
 from app.db.session import get_db
 from app.documents.service import (
     create_route_sheet,
@@ -18,7 +20,7 @@ from app.documents.service import (
     get_route_sheet_orders,
 )
 from app.models.camion import Camion
-from app.models.commande import Commande, OrderStatus
+from app.models.commande import Commande, LigneCommande, OrderStatus
 from app.models.document import BonDeLivraison, Facture, FeuilleDeRoute
 from app.models.user import User
 
@@ -158,14 +160,78 @@ async def download_facture(
     file_path = (STORAGE_ROOT / "factures" / f"{facture.reference_id}.pdf").resolve()
     if not file_path.is_relative_to(STORAGE_ROOT.resolve()):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reference")
+
     if not file_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF not generated yet")
+        from app.documents.service import regenerate_facture_pdf
+
+        await regenerate_facture_pdf(db, facture)
+        if not file_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="PDF generation failed",
+            )
 
     return FileResponse(
         path=str(file_path),
         media_type="application/pdf",
         filename=f"facture_{facture.reference_id}.pdf",
     )
+
+
+@router.patch("/facture/{commande_id}/remises")
+async def update_facture_remises(
+    commande_id: UUID,
+    body: UpdateRemisesRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Update per-line discounts on an existing facture and regenerate PDF.
+
+    Operatrice/admin only — the pharmacien never edits his own discount.
+    """
+    if current_user.role.value not in ("operatrice", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operatrice/admin only",
+        )
+
+    facture_result = await db.execute(select(Facture).where(Facture.commande_id == commande_id))
+    facture = facture_result.scalar_one_or_none()
+    if not facture:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Facture not found")
+
+    # Validate all ligne_id belong to this commande
+    line_ids = [lr.ligne_id for lr in body.lines]
+    existing_result = await db.execute(
+        select(LigneCommande.id).where(
+            LigneCommande.commande_id == commande_id,
+            LigneCommande.id.in_(line_ids),
+        )
+    )
+    existing_ids = {row[0] for row in existing_result}
+    if set(line_ids) != existing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="One or more ligne_id do not belong to this commande",
+        )
+
+    remises_map: dict[UUID, Decimal] = {lr.ligne_id: lr.remise_pct for lr in body.lines}
+
+    db.info["actor_id"] = str(current_user.id)
+
+    from app.documents.service import regenerate_facture_pdf
+
+    await regenerate_facture_pdf(db, facture, remises=remises_map)
+    await db.commit()
+    await db.refresh(facture)
+
+    return {
+        "id": str(facture.id),
+        "reference_id": facture.reference_id,
+        "commande_id": str(facture.commande_id),
+        "montant_ht": float(facture.montant_ht),
+        "montant_ttc": float(facture.montant_ttc),
+    }
 
 
 @router.get("/bl/{commande_id}")
@@ -379,33 +445,41 @@ async def claim_today_route_sheet(
             FeuilleDeRoute.date == today,
         )
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="You already have a route sheet for today",
-        )
+    existing_sheet = existing.scalar_one_or_none()
+    if existing_sheet:
+        return {"status": "ok", "feuille_id": str(existing_sheet.id)}
 
-    # Find unassigned sheets for today that have orders
+    # Find unassigned sheets for today that have ready orders
     result = await db.execute(
         select(FeuilleDeRoute).where(
             FeuilleDeRoute.date == today,
             FeuilleDeRoute.livreur_id.is_(None),
         )
     )
-    available = result.scalars().all()
+    candidate_sheets = result.scalars().all()
+    available: list[tuple[FeuilleDeRoute, int]] = []
+    for sheet in candidate_sheets:
+        orders_result = await db.execute(
+            select(func.count())
+            .select_from(Commande)
+            .where(
+                Commande.feuille_route_id == sheet.id,
+                Commande.statut == OrderStatus.PRETE,
+            )
+        )
+        ready_count = orders_result.scalar() or 0
+        if ready_count > 0:
+            available.append((sheet, int(ready_count)))
 
     if not available:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No unassigned route sheet available for today",
-        )
-    if len(available) > 1:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Multiple unassigned route sheets — operator must assign explicitly",
+            detail="No unassigned route sheet with ready orders available for today",
         )
 
-    feuille = available[0]
+    # Auto-pick the busiest available sheet, then the oldest one for a stable claim order.
+    available.sort(key=lambda item: (-item[1], item[0].created_at, str(item[0].id)))
+    feuille = available[0][0]
     db.info["actor_id"] = str(current_user.id)
     feuille.livreur_id = current_user.id
     await db.commit()

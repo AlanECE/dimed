@@ -1,5 +1,6 @@
 "use client";
 
+import { RemiseDialog } from "@/components/remise-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,7 +15,7 @@ import {
 import { useFactures } from "@/hooks/use-factures";
 import { API_BASE } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Percent } from "lucide-react";
 import { useState } from "react";
 const PAGE_SIZE = 20;
 
@@ -23,8 +24,9 @@ export function FactureTable() {
 	const [dateFrom, setDateFrom] = useState("");
 	const [dateTo, setDateTo] = useState("");
 	const [page, setPage] = useState(0);
+	const [editing, setEditing] = useState<{ id: string; ref: string } | null>(null);
 
-	const { factures, total, loading } = useFactures({
+	const { factures, total, loading, updateRemises } = useFactures({
 		dateFrom: dateFrom || undefined,
 		dateTo: dateTo || undefined,
 		limit: PAGE_SIZE,
@@ -33,6 +35,7 @@ export function FactureTable() {
 
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 	const isPharmacien = user?.role === "pharmacien";
+	const canEditRemises = user?.role === "operatrice" || user?.role === "admin";
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -83,7 +86,7 @@ export function FactureTable() {
 							<TableHead className="text-right text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Montant TTC
 							</TableHead>
-							<TableHead className="w-14" />
+							<TableHead className={canEditRemises ? "w-24" : "w-14"} />
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -129,20 +132,35 @@ export function FactureTable() {
 										{f.montant_ttc.toLocaleString("fr-FR")} DA
 									</TableCell>
 									<TableCell>
-										<a
-											href={`${API_BASE}/documents/facture/${f.commande_id}`}
-											target="_blank"
-											rel="noopener noreferrer"
-										>
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-8 w-8 rounded-lg text-primary/70 hover:bg-primary/10 hover:text-primary"
-												aria-label="Télécharger la facture"
+										<div className="flex items-center justify-end gap-1">
+											{canEditRemises && (
+												<Button
+													variant="ghost"
+													size="icon"
+													onClick={() =>
+														setEditing({ id: f.commande_id, ref: f.commande_reference })
+													}
+													className="h-8 w-8 rounded-lg text-primary/70 hover:bg-primary/10 hover:text-primary"
+													aria-label="Modifier les remises"
+												>
+													<Percent className="h-4 w-4" />
+												</Button>
+											)}
+											<a
+												href={`${API_BASE}/documents/facture/${f.commande_id}`}
+												target="_blank"
+												rel="noopener noreferrer"
 											>
-												<Download className="h-4 w-4" />
-											</Button>
-										</a>
+												<Button
+													variant="ghost"
+													size="icon"
+													className="h-8 w-8 rounded-lg text-primary/70 hover:bg-primary/10 hover:text-primary"
+													aria-label="Télécharger la facture"
+												>
+													<Download className="h-4 w-4" />
+												</Button>
+											</a>
+										</div>
 									</TableCell>
 								</TableRow>
 							))
@@ -150,6 +168,17 @@ export function FactureTable() {
 					</TableBody>
 				</Table>
 			</div>
+
+			{canEditRemises && (
+				<RemiseDialog
+					commandeId={editing?.id ?? null}
+					commandeReference={editing?.ref ?? ""}
+					onOpenChange={(open) => {
+						if (!open) setEditing(null);
+					}}
+					onSaved={updateRemises}
+				/>
+			)}
 
 			{/* Pagination */}
 			<div className="flex items-center justify-between">

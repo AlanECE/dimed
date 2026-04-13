@@ -1,5 +1,6 @@
 from app.models.arrivage import Arrivage
 from app.models.audit import AuditLog
+from app.models.caddie import Caddie
 from app.models.camion import Camion
 from app.models.commande import Commande, LigneCommande, OrderStatus
 from app.models.document import BonDeLivraison, Facture, FeuilleDeRoute
@@ -18,6 +19,7 @@ __all__ = [
     "UserRole",
     "Camion",
     "Medicament",
+    "Caddie",
     "Commande",
     "LigneCommande",
     "OrderStatus",

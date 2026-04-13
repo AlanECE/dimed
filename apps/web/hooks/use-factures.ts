@@ -1,7 +1,7 @@
 "use client";
 
 import { fetchApi } from "@/lib/api";
-import type { FactureListItem } from "@/lib/types";
+import type { FactureListItem, UpdateRemisesRequest } from "@/lib/types";
 import { useCallback, useEffect, useState } from "react";
 
 type UseFacturesParams = {
@@ -44,5 +44,16 @@ export function useFactures(params: UseFacturesParams = {}) {
 		fetch();
 	}, [fetch]);
 
-	return { factures, total, loading, refetch: fetch };
+	const updateRemises = useCallback(
+		async (commande_id: string, payload: UpdateRemisesRequest) => {
+			await fetchApi(`/documents/facture/${commande_id}/remises`, {
+				method: "PATCH",
+				body: JSON.stringify(payload),
+			});
+			await fetch();
+		},
+		[fetch],
+	);
+
+	return { factures, total, loading, refetch: fetch, updateRemises };
 }

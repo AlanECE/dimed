@@ -1,4 +1,5 @@
 import "@/app/globals.css";
+import { GoogleAuthProvider } from "@/components/google-auth-provider";
 import { AuthProvider } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import type { Metadata } from "next";
@@ -25,10 +26,12 @@ export default function RootLayout({
 	return (
 		<html lang="fr" className={cn("font-sans antialiased", sora.variable, inter.variable)}>
 			<body>
-				<AuthProvider>
-					{children}
-					<Toaster richColors position="top-right" />
-				</AuthProvider>
+				<GoogleAuthProvider>
+					<AuthProvider>
+						{children}
+						<Toaster richColors position="top-right" />
+					</AuthProvider>
+				</GoogleAuthProvider>
 			</body>
 		</html>
 	);

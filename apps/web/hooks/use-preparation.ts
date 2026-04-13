@@ -21,10 +21,20 @@ export function usePreparation() {
 	}, []);
 
 	const updateLigne = useCallback(
-		async (commandeId: string, ligneId: string, qtePrelevee: number, verifie: boolean) => {
+		async (
+			commandeId: string,
+			ligneId: string,
+			qtePrelevee: number | null,
+			verifie: boolean | null,
+			ocrVerifie?: boolean,
+		) => {
+			const body: Record<string, unknown> = {};
+			if (qtePrelevee !== null) body.qte_prelevee = qtePrelevee;
+			if (verifie !== null) body.verifie = verifie;
+			if (ocrVerifie !== undefined) body.ocr_verifie = ocrVerifie;
 			await fetchApi(`/commandes/${commandeId}/update-ligne/${ligneId}`, {
 				method: "PATCH",
-				body: JSON.stringify({ qte_prelevee: qtePrelevee, verifie }),
+				body: JSON.stringify(body),
 			});
 		},
 		[],

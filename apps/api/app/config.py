@@ -13,6 +13,20 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     cookie_secure: bool = False
 
+    frontend_url: str = "http://localhost:3000"
+    email_verification_ttl_hours: int = 24
+
+    google_client_id: str = ""
+
+    smtp_host: str = "mailhog"
+    smtp_port: int = 1025
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "no-reply@dimed.dz"
+    smtp_from_name: str = "DIMED"
+    smtp_tls: bool = False
+    smtp_ssl: bool = False
+
     model_config = {"env_prefix": "DIMED_"}
 
     @model_validator(mode="after")
@@ -28,6 +42,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DIMED_DATABASE_URL must not use the development default in production"
             )
+        if not self.google_client_id:
+            raise ValueError("DIMED_GOOGLE_CLIENT_ID must be set in production")
         return self
 
 

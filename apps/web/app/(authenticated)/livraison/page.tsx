@@ -193,6 +193,18 @@ export default function LivraisonPage() {
 		}
 	}, [failDialog, failAction, failMotif, markFailed]);
 
+	const handleClaim = useCallback(async () => {
+		setClaiming(true);
+		try {
+			await claimToday();
+			toast.success("Tournée réclamée avec succès");
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Aucune tournée disponible");
+		} finally {
+			setClaiming(false);
+		}
+	}, [claimToday]);
+
 	// -----------------------------------------------------------------------
 	// Loading state
 	// -----------------------------------------------------------------------
@@ -227,21 +239,6 @@ export default function LivraisonPage() {
 			</div>
 		);
 	}
-
-	// -----------------------------------------------------------------------
-	// No route sheet
-	// -----------------------------------------------------------------------
-	const handleClaim = useCallback(async () => {
-		setClaiming(true);
-		try {
-			await claimToday();
-			toast.success("Tournée réclamée avec succès");
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Aucune tournée disponible");
-		} finally {
-			setClaiming(false);
-		}
-	}, [claimToday]);
 
 	if (!feuille) {
 		return (

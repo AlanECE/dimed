@@ -1,7 +1,7 @@
 "use client";
 
 import { API_BASE, ApiError, fetchApi } from "@/lib/api";
-import type { UserResponse } from "@/lib/types";
+import type { GoogleAuthPayload, SignupPayload, UserResponse } from "@/lib/types";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -10,9 +10,32 @@ type AuthContextValue = {
 	loading: boolean;
 	login: (email: string, password: string) => Promise<void>;
 	logout: () => Promise<void>;
+	signup: (payload: SignupPayload) => Promise<{ message: string }>;
+	loginWithGoogle: (payload: GoogleAuthPayload) => Promise<void>;
+	resendVerification: (email: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+	const res = await fetch(`${API_BASE}${path}`, {
+		method: "POST",
+		credentials: "include",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body),
+	});
+	if (!res.ok) {
+		let message = "Erreur serveur";
+		try {
+			const json = await res.json();
+			message = json.detail ?? json.message ?? message;
+		} catch {
+			// ignore
+		}
+		throw new ApiError(res.status, message);
+	}
+	return res.json() as Promise<T>;
+}
 
 function AuthProvider({ children }: { children: ReactNode }) {
 	const [user, setUser] = useState<UserResponse | null>(null);
@@ -26,19 +49,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	const login = useCallback(async (email: string, password: string) => {
-		const res = await fetch(`${API_BASE}/auth/login`, {
-			method: "POST",
-			credentials: "include",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ email, password }),
-		});
-
-		if (!res.ok) {
-			const text = await res.text();
-			throw new ApiError(res.status, text);
-		}
-
-		const userData: UserResponse = await res.json();
+		const userData = await postJson<UserResponse>("/auth/login", { email, password });
 		setUser(userData);
 	}, []);
 
@@ -51,7 +62,23 @@ function AuthProvider({ children }: { children: ReactNode }) {
 		}
 	}, []);
 
-	const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout]);
+	const signup = useCallback(async (payload: SignupPayload) => {
+		return postJson<{ message: string }>("/auth/signup", payload);
+	}, []);
+
+	const loginWithGoogle = useCallback(async (payload: GoogleAuthPayload) => {
+		const userData = await postJson<UserResponse>("/auth/google", payload);
+		setUser(userData);
+	}, []);
+
+	const resendVerification = useCallback(async (email: string) => {
+		await postJson<{ message: string }>("/auth/resend-verification", { email });
+	}, []);
+
+	const value = useMemo(
+		() => ({ user, loading, login, logout, signup, loginWithGoogle, resendVerification }),
+		[user, loading, login, logout, signup, loginWithGoogle, resendVerification],
+	);
 
 	return <AuthContext value={value}>{children}</AuthContext>;
 }

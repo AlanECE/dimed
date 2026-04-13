@@ -1,15 +1,22 @@
+import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import CurrentUser
+from app.auth.google_service import upsert_google_user, verify_google_id_token
 from app.auth.schemas import (
     ChangePasswordRequest,
+    GoogleAuthRequest,
     LoginRequest,
+    ResendVerificationRequest,
+    SignupRequest,
+    SignupResponse,
     UpdateProfileRequest,
     UserResponse,
+    VerifyEmailResponse,
 )
 from app.auth.service import (
     create_access_token,
@@ -21,9 +28,19 @@ from app.auth.service import (
     validate_refresh_token,
     verify_password,
 )
+from app.auth.signup_service import (
+    activate_user,
+    consume_verification_token,
+    create_signup_user,
+    create_verification_token,
+    email_exists,
+    send_verification_email,
+)
 from app.config import settings
 from app.db.session import get_db
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -53,32 +70,128 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie("refresh_token", path="/auth")
 
 
+def _issue_session(response: Response, user: User) -> None:
+    access_token = create_access_token(str(user.id), user.role.value, user.email)
+    refresh_token = create_refresh_token(str(user.id))
+    _set_auth_cookies(response, access_token, refresh_token)
+
+
 @router.post("/login")
 async def login(
     body: LoginRequest,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> UserResponse:
-    result = await db.execute(select(User).where(User.email == body.email))
+    result = await db.execute(select(User).where(User.email == body.email.lower()))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(body.password, user.password_hash):
+    if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="invalid_credentials",
+        )
+
+    if not user.is_email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="email_not_verified",
         )
 
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Account is disabled",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="account_disabled",
         )
 
-    access_token = create_access_token(str(user.id), user.role.value, user.email)
-    refresh_token = create_refresh_token(str(user.id))
+    _issue_session(response, user)
+    return UserResponse.model_validate(user)
 
-    _set_auth_cookies(response, access_token, refresh_token)
 
+@router.post("/signup", response_model=SignupResponse)
+async def signup(
+    body: SignupRequest,
+    background_tasks: BackgroundTasks,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> SignupResponse:
+    generic_response = SignupResponse(
+        message="Un email de verification vient d'etre envoye si l'adresse est disponible."
+    )
+
+    if await email_exists(db, body.email):
+        # Do not leak which emails are registered
+        return generic_response
+
+    user = await create_signup_user(db, body)
+    token = create_verification_token(user.id)
+
+    async def _send() -> None:
+        try:
+            await send_verification_email(user, token)
+        except Exception:  # noqa: BLE001
+            logger.exception("Background email send failed for %s", user.email)
+
+    background_tasks.add_task(_send)
+    return generic_response
+
+
+@router.get("/verify-email", response_model=VerifyEmailResponse)
+async def verify_email(
+    token: str,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> VerifyEmailResponse:
+    user_id = consume_verification_token(token)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_or_expired_token",
+        )
+
+    user = await activate_user(db, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_not_found",
+        )
+
+    return VerifyEmailResponse(message="Compte active avec succes")
+
+
+@router.post("/resend-verification", response_model=SignupResponse)
+async def resend_verification(
+    body: ResendVerificationRequest,
+    background_tasks: BackgroundTasks,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> SignupResponse:
+    generic_response = SignupResponse(
+        message="Si un compte non verifie existe, un nouvel email a ete envoye."
+    )
+
+    result = await db.execute(select(User).where(User.email == body.email.lower()))
+    user = result.scalar_one_or_none()
+    if not user or user.is_email_verified:
+        return generic_response
+
+    token = create_verification_token(user.id)
+
+    async def _send() -> None:
+        try:
+            await send_verification_email(user, token)
+        except Exception:  # noqa: BLE001
+            logger.exception("Background email send failed for %s", user.email)
+
+    background_tasks.add_task(_send)
+    return generic_response
+
+
+@router.post("/google")
+async def google_auth(
+    body: GoogleAuthRequest,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> UserResponse:
+    info = verify_google_id_token(body.credential)
+    user = await upsert_google_user(db, info, body)
+    _issue_session(response, user)
     return UserResponse.model_validate(user)
 
 
@@ -182,7 +295,9 @@ async def change_password(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> dict:
-    if not verify_password(body.current_password, current_user.password_hash):
+    if not current_user.password_hash or not verify_password(
+        body.current_password, current_user.password_hash
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
