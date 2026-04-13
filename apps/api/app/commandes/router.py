@@ -1334,6 +1334,7 @@ async def download_liste_prelevement(
         prep_user = prep_result.scalar_one_or_none()
         preparateur_nom = prep_user.nom if prep_user else None
 
+    from app.models.arrivage import Arrivage
     from app.models.document import BonDeLivraison
     from app.models.medicament import Medicament
 
@@ -1352,6 +1353,34 @@ async def download_liste_prelevement(
         )
         med_map = {row.id: {"code": row.code_article, "ppa": float(row.ppa)} for row in med_result}
 
+    dlc_by_key: dict[tuple, object] = {}
+    latest_dlc_by_med: dict = {}
+    if med_ids:
+        arr_result = await db.execute(
+            select(
+                Arrivage.medicament_id,
+                Arrivage.n_lot,
+                Arrivage.date_peremption,
+                Arrivage.date_arrivage,
+            ).where(Arrivage.medicament_id.in_(med_ids))
+        )
+        for row in arr_result:
+            if row.n_lot:
+                dlc_by_key[(row.medicament_id, row.n_lot)] = row.date_peremption
+            existing = latest_dlc_by_med.get(row.medicament_id)
+            if existing is None or row.date_arrivage > existing[0]:
+                latest_dlc_by_med[row.medicament_id] = (row.date_arrivage, row.date_peremption)
+
+    def _exp_str(ln) -> str:
+        dlc = None
+        if ln.n_lot:
+            dlc = dlc_by_key.get((ln.medicament_id, ln.n_lot))
+        if dlc is None:
+            fallback = latest_dlc_by_med.get(ln.medicament_id)
+            if fallback:
+                dlc = fallback[1]
+        return dlc.strftime("%m/%Y") if dlc else ""
+
     lignes_data = []
     for ln in commande.lignes:
         info = med_map.get(ln.medicament_id, {})
@@ -1362,7 +1391,7 @@ async def download_liste_prelevement(
                 "qte_demandee": ln.qte_demandee,
                 "qte_prelevee": ln.qte_prelevee or 0,
                 "n_lot": ln.n_lot or "—",
-                "exp": "",
+                "exp": _exp_str(ln),
                 "prix_unitaire": float(ln.prix_unitaire),
                 "ppa": info.get("ppa", float(ln.prix_unitaire)),
             }
