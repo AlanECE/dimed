@@ -40,6 +40,7 @@ services:
       - "8000:8000"
     volumes:
       - ../apps/api:/app
+      - ../apps/storage:/storage
       - ../packages/ocr:/packages/ocr
     environment:
       DIMED_ENVIRONMENT: ${DIMED_ENVIRONMENT:-development}
