@@ -61,12 +61,15 @@ class Commande(AuditMixin, Base):
     preparateur_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id"), nullable=True, index=True
     )
+    operatrice_comment: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     lignes: Mapped[list["LigneCommande"]] = relationship(
         back_populates="commande", cascade="all, delete-orphan"
     )
-    caddies: Mapped[list["Caddie"]] = relationship(  # noqa: F821
-        back_populates="commande", cascade="all, delete-orphan"
+    caddie_pool: Mapped["CaddiePool | None"] = relationship(  # noqa: F821
+        back_populates="commande",
+        uselist=False,
+        foreign_keys="CaddiePool.current_commande_id",
     )
 
 

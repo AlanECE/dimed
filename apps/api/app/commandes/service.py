@@ -3,12 +3,12 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
 from app.commandes.schemas import CreateOrderRequest
-from app.models.caddie import Caddie
+from app.models.caddie_pool import CaddiePool
 from app.models.commande import Commande, LigneCommande, OrderStatus
 from app.models.medicament import Medicament
 from app.models.notification import Notification
@@ -40,6 +40,21 @@ async def create_order(db: AsyncSession, pharmacien_id: UUID, body: CreateOrderR
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Medicaments not found: {', '.join(missing)}",
+        )
+
+    out_of_stock: list[str] = []
+    for article in body.articles:
+        med = medicaments.get(article.medicament_id)
+        if med is None:
+            continue
+        if med.stock_quantity <= 0 or med.stock_quantity < article.qte:
+            out_of_stock.append(
+                f"{med.designation} (stock={med.stock_quantity}, demande={article.qte})"
+            )
+    if out_of_stock:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Rupture de stock : " + ", ".join(out_of_stock),
         )
 
     reference_id = await next_commande_ref(db)
@@ -163,91 +178,71 @@ async def transition_order(
     return commande
 
 
-async def bulk_claim_commandes(
+async def claim_caddie_for_preparation(
     db: AsyncSession,
-    commande_ids: list[UUID],
-    caddies_by_commande: dict[UUID, list[str]],
+    commande_id: UUID,
+    caddie_pool_id: UUID,
     preparateur_id: UUID,
-    actor_id: UUID,
-) -> list[Commande]:
-    """Claim multiple commandes to a preparateur and replace their caddies.
+) -> Commande:
+    """Exclusive-lock claim of a pool caddie for a commande.
 
-    - Locks rows with SELECT ... FOR UPDATE to prevent race conditions between
-      two simultaneous claims.
-    - Only commandes in ACCEPTEE or EN_PREPARATION are accepted.
-    - Refuses if a commande is already claimed by a different preparateur.
-    - If a commande is ACCEPTEE, transitions it to EN_PREPARATION and emits
-      the same notification as the single start-preparation path.
-    - Replaces any existing caddies on each commande with the provided numeros.
+    Transitions the commande ACCEPTEE → EN_PREPARATION and marks the caddie busy.
+    Locks BOTH the commande row and the caddies_pool row with SELECT ... FOR UPDATE
+    so two concurrent preparateurs cannot both claim the same order with different
+    caddies (which would strand one of the caddies as "occupied by" the same order).
     """
-    allowed_statuses = {OrderStatus.ACCEPTEE, OrderStatus.EN_PREPARATION}
-
-    result = await db.execute(
-        select(Commande)
-        .where(Commande.id.in_(commande_ids))
-        .options(selectinload(Commande.lignes))
-        .with_for_update()
+    # Lock the commande first to serialize any concurrent start-preparation on it.
+    cmd_lock = await db.execute(
+        select(Commande.id, Commande.statut).where(Commande.id == commande_id).with_for_update()
     )
-    commandes = list(result.scalars().all())
-
-    found_ids = {c.id for c in commandes}
-    missing = set(commande_ids) - found_ids
-    if missing:
+    cmd_row = cmd_lock.first()
+    if cmd_row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Commandes not found: {', '.join(str(m) for m in missing)}",
+            detail="Order not found",
+        )
+    if cmd_row.statut != OrderStatus.ACCEPTEE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot start preparation from {cmd_row.statut.value}",
         )
 
-    for cmd in commandes:
-        if cmd.statut not in allowed_statuses:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(f"Commande {cmd.reference_id} is not in ACCEPTEE or EN_PREPARATION status"),
-            )
-        if cmd.preparateur_id and cmd.preparateur_id != preparateur_id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(f"Commande {cmd.reference_id} is already claimed by another preparateur"),
-            )
-        if cmd.id not in caddies_by_commande:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"No caddies provided for commande {cmd.reference_id}",
-            )
-        numeros = [n.strip() for n in caddies_by_commande[cmd.id] if n.strip()]
-        if not numeros:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Empty caddie list for commande {cmd.reference_id}",
-            )
-        caddies_by_commande[cmd.id] = numeros
+    # Then lock the caddie pool row.
+    pool_result = await db.execute(
+        select(CaddiePool).where(CaddiePool.id == caddie_pool_id).with_for_update()
+    )
+    caddie = pool_result.scalar_one_or_none()
+    if not caddie:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Caddie not found",
+        )
+    if not caddie.is_available:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Caddie {caddie.numero} indisponible",
+        )
 
-    db.info["actor_id"] = str(actor_id)
+    commande = await get_order_with_lines(db, commande_id)
+    if commande is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found",
+        )
 
-    for cmd in commandes:
-        cmd.preparateur_id = preparateur_id
-        if cmd.statut == OrderStatus.ACCEPTEE:
-            cmd.statut = OrderStatus.EN_PREPARATION
-            notification = Notification(
-                id=uuid4(),
-                user_id=cmd.pharmacien_id,
-                commande_id=cmd.id,
-                type=OrderStatus.EN_PREPARATION.value,
-                message=(
-                    f"Commande {cmd.reference_id} {STATUS_MESSAGES[OrderStatus.EN_PREPARATION]}"
-                ),
-            )
-            db.add(notification)
+    commande.preparateur_id = preparateur_id
+    caddie.is_available = False
+    caddie.current_commande_id = commande_id
 
-        await db.execute(delete(Caddie).where(Caddie.commande_id == cmd.id))
-        for numero in caddies_by_commande[cmd.id]:
-            db.add(
-                Caddie(
-                    id=uuid4(),
-                    commande_id=cmd.id,
-                    numero=numero,
-                )
-            )
-
+    commande = await transition_order(db, commande_id, OrderStatus.EN_PREPARATION)
     await db.flush()
-    return commandes
+    return commande
+
+
+async def release_caddie_on_finalize(db: AsyncSession, commande_id: UUID) -> None:
+    """Free any caddie currently attached to this commande."""
+    await db.execute(
+        update(CaddiePool)
+        .where(CaddiePool.current_commande_id == commande_id)
+        .values(is_available=True, current_commande_id=None)
+    )

@@ -1,8 +1,9 @@
 import base64
 import logging
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -12,24 +13,34 @@ from sqlalchemy.orm import load_only, selectinload
 
 from app.auth.dependencies import CurrentUser
 from app.commandes.schemas import (
+    AddLineRequest,
     AssignCamionRequest,
-    BulkClaimRequest,
+    CaddiePoolResponse,
     CreateOrderRequest,
+    EditLineRequest,
     OrderDetailResponse,
     OrderResponse,
+    StartPreparationRequest,
+    UpdateCommentRequest,
 )
 from app.commandes.service import (
-    bulk_claim_commandes,
+    claim_caddie_for_preparation,
     create_order,
     get_order_with_lines,
+    release_caddie_on_finalize,
     transition_order,
 )
 from app.db.session import get_db
-from app.documents.service import get_or_create_route_sheet, get_route_sheet
-from app.models.caddie import Caddie
+from app.documents.service import (
+    get_or_create_route_sheet,
+    get_route_sheet,
+    regenerate_facture_pdf,
+)
+from app.models.caddie_pool import CaddiePool
 from app.models.camion import Camion
-from app.models.commande import Commande, OrderStatus
-from app.models.document import FeuilleDeRoute
+from app.models.commande import Commande, LigneCommande, OrderStatus
+from app.models.document import Facture, FeuilleDeRoute
+from app.models.medicament import Medicament
 from app.models.user import User
 
 # Statuses visible per workflow role
@@ -78,15 +89,17 @@ def _enrich_order(
         "pharmacien_email": (
             user.email if user and viewer_role in ("operatrice", "admin") else None
         ),
-        "caddies": [
-            {
-                "id": str(c.id),
-                "numero": c.numero,
-                "created_at": c.created_at,
-            }
-            for c in commande.__dict__.get("caddies") or []
-        ],
+        "operatrice_comment": commande.operatrice_comment,
+        "caddie_pool": None,
     }
+    pool = commande.__dict__.get("caddie_pool")
+    if pool is not None:
+        data["caddie_pool"] = {
+            "id": str(pool.id),
+            "numero": pool.numero,
+            "is_available": pool.is_available,
+            "current_commande_ref": commande.reference_id,
+        }
     if "lignes" in commande.__dict__ and commande.__dict__["lignes"]:
         data["lignes"] = [
             {
@@ -226,7 +239,7 @@ async def list_orders(
         query.order_by(Commande.created_at.desc())
         .limit(limit)
         .offset(offset)
-        .options(selectinload(Commande.caddies))
+        .options(selectinload(Commande.caddie_pool))
     )
 
     result = await db.execute(query)
@@ -518,6 +531,222 @@ async def cancel_order(
     return OrderDetailResponse(**data)
 
 
+_OPERATRICE_EDITABLE_STATUSES = {OrderStatus.CREEE, OrderStatus.ACCEPTEE}
+
+
+def _require_operatrice_or_admin(current_user: User) -> None:
+    if current_user.role.value not in ("operatrice", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operatrice/admin only",
+        )
+
+
+def _require_editable(commande: Commande) -> None:
+    if commande.statut not in _OPERATRICE_EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Commande non modifiable dans son statut actuel "
+                f"({commande.statut.value}). Edition autorisee en CREEE ou ACCEPTEE uniquement."
+            ),
+        )
+
+
+async def _load_facture_for_commande(db: AsyncSession, commande_id: UUID) -> Facture | None:
+    result = await db.execute(select(Facture).where(Facture.commande_id == commande_id))
+    return result.scalar_one_or_none()
+
+
+async def _finalize_operatrice_edit(
+    db: AsyncSession,
+    commande: Commande,
+    current_user: User,
+) -> OrderDetailResponse:
+    """Recompute montant_total, regen facture if ACCEPTEE, refresh + enrich."""
+    commande.montant_total = sum(
+        (ligne.prix_unitaire * ligne.qte_demandee for ligne in commande.lignes),
+        start=Decimal("0"),
+    )
+    await db.flush()
+
+    if commande.statut == OrderStatus.ACCEPTEE:
+        facture = await _load_facture_for_commande(db, commande.id)
+        if facture is not None:
+            await regenerate_facture_pdf(db, facture)
+
+    await db.commit()
+    await db.refresh(commande, ["lignes"])
+
+    pharm_result = await db.execute(select(User).where(User.id == commande.pharmacien_id))
+    pharmacien = pharm_result.scalar_one_or_none()
+
+    data = _enrich_order(
+        commande,
+        pharmacien,
+        None,
+        viewer_role=current_user.role.value,
+    )
+    return OrderDetailResponse(**data)
+
+
+@router.patch("/{commande_id}/comment")
+async def update_operatrice_comment(
+    commande_id: UUID,
+    body: UpdateCommentRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> OrderDetailResponse:
+    _require_operatrice_or_admin(current_user)
+    commande = await get_order_with_lines(db, commande_id)
+    if not commande:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    db.info["actor_id"] = str(current_user.id)
+    commande.operatrice_comment = body.comment
+    await db.commit()
+    await db.refresh(commande, ["lignes"])
+
+    pharm_result = await db.execute(select(User).where(User.id == commande.pharmacien_id))
+    pharmacien = pharm_result.scalar_one_or_none()
+
+    data = _enrich_order(
+        commande,
+        pharmacien,
+        None,
+        viewer_role=current_user.role.value,
+    )
+    return OrderDetailResponse(**data)
+
+
+@router.patch("/{commande_id}/lines/{ligne_id}")
+async def edit_operatrice_line(
+    commande_id: UUID,
+    ligne_id: UUID,
+    body: EditLineRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> OrderDetailResponse:
+    _require_operatrice_or_admin(current_user)
+
+    commande = await get_order_with_lines(db, commande_id)
+    if not commande:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    _require_editable(commande)
+
+    ligne = next((ln for ln in commande.lignes if ln.id == ligne_id), None)
+    if ligne is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Line not found")
+
+    db.info["actor_id"] = str(current_user.id)
+    delta = body.qte_demandee - ligne.qte_demandee
+
+    if commande.statut == OrderStatus.ACCEPTEE and delta != 0:
+        med_result = await db.execute(
+            select(Medicament).where(Medicament.id == ligne.medicament_id)
+        )
+        med = med_result.scalar_one_or_none()
+        if med is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Medicament not found"
+            )
+        if delta > 0 and med.stock_quantity < delta:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Stock insuffisant pour {med.designation} "
+                    f"(stock={med.stock_quantity}, delta demande={delta})"
+                ),
+            )
+        med.stock_quantity -= delta
+
+    ligne.qte_demandee = body.qte_demandee
+    return await _finalize_operatrice_edit(db, commande, current_user)
+
+
+@router.post("/{commande_id}/lines")
+async def add_operatrice_line(
+    commande_id: UUID,
+    body: AddLineRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> OrderDetailResponse:
+    _require_operatrice_or_admin(current_user)
+
+    commande = await get_order_with_lines(db, commande_id)
+    if not commande:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    _require_editable(commande)
+
+    med_result = await db.execute(select(Medicament).where(Medicament.id == body.medicament_id))
+    med = med_result.scalar_one_or_none()
+    if med is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Medicament not found")
+
+    db.info["actor_id"] = str(current_user.id)
+
+    if commande.statut == OrderStatus.ACCEPTEE:
+        if med.stock_quantity < body.qte_demandee:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Stock insuffisant pour {med.designation} "
+                    f"(stock={med.stock_quantity}, demande={body.qte_demandee})"
+                ),
+            )
+        med.stock_quantity -= body.qte_demandee
+
+    ligne = LigneCommande(
+        id=uuid4(),
+        commande_id=commande.id,
+        medicament_id=body.medicament_id,
+        designation=med.designation,
+        qte_demandee=body.qte_demandee,
+        prix_unitaire=med.ppa,
+    )
+    commande.lignes.append(ligne)
+    return await _finalize_operatrice_edit(db, commande, current_user)
+
+
+@router.delete("/{commande_id}/lines/{ligne_id}")
+async def delete_operatrice_line(
+    commande_id: UUID,
+    ligne_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> OrderDetailResponse:
+    _require_operatrice_or_admin(current_user)
+
+    commande = await get_order_with_lines(db, commande_id)
+    if not commande:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    _require_editable(commande)
+
+    if len(commande.lignes) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Derniere ligne : utilisez /reject pour annuler la commande",
+        )
+
+    ligne = next((ln for ln in commande.lignes if ln.id == ligne_id), None)
+    if ligne is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Line not found")
+
+    db.info["actor_id"] = str(current_user.id)
+
+    if commande.statut == OrderStatus.ACCEPTEE:
+        med_result = await db.execute(
+            select(Medicament).where(Medicament.id == ligne.medicament_id)
+        )
+        med = med_result.scalar_one_or_none()
+        if med is not None:
+            med.stock_quantity += ligne.qte_demandee
+
+    commande.lignes.remove(ligne)
+    await db.delete(ligne)
+    return await _finalize_operatrice_edit(db, commande, current_user)
+
+
 @router.patch("/{commande_id}/assign-camion")
 async def assign_camion(
     commande_id: UUID,
@@ -596,6 +825,7 @@ async def assign_camion(
 @router.patch("/{commande_id}/start-preparation")
 async def start_preparation(
     commande_id: UUID,
+    body: StartPreparationRequest,
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> OrderDetailResponse:
@@ -606,9 +836,14 @@ async def start_preparation(
         )
 
     db.info["actor_id"] = str(current_user.id)
-    commande = await transition_order(db, commande_id, OrderStatus.EN_PREPARATION)
+    commande = await claim_caddie_for_preparation(
+        db=db,
+        commande_id=commande_id,
+        caddie_pool_id=body.caddie_pool_id,
+        preparateur_id=current_user.id,
+    )
     await db.commit()
-    await db.refresh(commande, ["lignes"])
+    await db.refresh(commande, ["lignes", "caddie_pool"])
 
     pharm_result = await db.execute(select(User).where(User.id == commande.pharmacien_id))
     pharmacien = pharm_result.scalar_one_or_none()
@@ -919,18 +1154,13 @@ async def update_ligne(
     return {"status": "ok"}
 
 
-class FinalizePreparationRequest(BaseModel):
-    nb_colis: int = Field(ge=1)
-
-
 @router.patch("/{commande_id}/finalize-preparation")
 async def finalize_preparation(
     commande_id: UUID,
-    body: FinalizePreparationRequest,
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> OrderDetailResponse:
-    """Finalize preparation: check all lines verified, set colis count."""
+    """Finalize preparation: check all lines verified and release the caddie."""
     if current_user.role.value not in (
         "preparateur",
         "operatrice",
@@ -966,8 +1196,9 @@ async def finalize_preparation(
         )
 
     db.info["actor_id"] = str(current_user.id)
-    commande.nb_colis = body.nb_colis
     commande.visa_preparateur = current_user.nom
+
+    await release_caddie_on_finalize(db, commande_id)
 
     # Check if partial pick
     has_partial = any((ln.qte_prelevee or 0) < ln.qte_demandee for ln in commande.lignes)
@@ -1258,174 +1489,59 @@ async def mark_failed(
 
 
 # ─────────────────────────────────────────────────────────────────
-# Bulk claim + caddies
+# Caddies pool (10 physical caddies, exclusive lock on claim)
 # ─────────────────────────────────────────────────────────────────
 
 
-@router.post("/bulk-claim")
-async def bulk_claim(
-    body: BulkClaimRequest,
+async def _list_caddie_pool(
+    db: AsyncSession, *, only_available: bool = False
+) -> list[CaddiePoolResponse]:
+    query = select(CaddiePool).order_by(CaddiePool.numero)
+    if only_available:
+        query = query.where(CaddiePool.is_available.is_(True))
+    result = await db.execute(query)
+    caddies = list(result.scalars().all())
+
+    ref_map: dict[UUID, str] = {}
+    active_ids = [c.current_commande_id for c in caddies if c.current_commande_id]
+    if active_ids:
+        cmd_result = await db.execute(
+            select(Commande.id, Commande.reference_id).where(Commande.id.in_(active_ids))
+        )
+        ref_map = {row.id: row.reference_id for row in cmd_result}
+
+    return [
+        CaddiePoolResponse(
+            id=c.id,
+            numero=c.numero,
+            is_available=c.is_available,
+            current_commande_ref=(
+                ref_map.get(c.current_commande_id) if c.current_commande_id else None
+            ),
+        )
+        for c in caddies
+    ]
+
+
+@router.get("/caddies/pool")
+async def list_caddies_pool(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> dict:
-    """Claim N commandes as a preparateur and attach caddie numeros."""
-    role = current_user.role.value
-    if role not in ("preparateur", "operatrice", "admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Preparateur/operatrice/admin only",
-        )
-
-    if role == "preparateur":
-        if body.preparateur_id and body.preparateur_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Preparateur can only claim for themselves",
-            )
-        target_preparateur_id = current_user.id
-    else:
-        if not body.preparateur_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="preparateur_id is required for operatrice/admin",
-            )
-        prep_check = await db.execute(select(User).where(User.id == body.preparateur_id))
-        prep_user = prep_check.scalar_one_or_none()
-        if not prep_user or prep_user.role.value != "preparateur":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="preparateur_id must reference a user with role preparateur",
-            )
-        target_preparateur_id = body.preparateur_id
-
-    cover_ids = {a.commande_id for a in body.caddies}
-    if cover_ids != set(body.commande_ids):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="caddies must cover all commande_ids exactly",
-        )
-
-    caddies_map: dict[UUID, list[str]] = {a.commande_id: a.numeros for a in body.caddies}
-
-    commandes = await bulk_claim_commandes(
-        db=db,
-        commande_ids=body.commande_ids,
-        caddies_by_commande=caddies_map,
-        preparateur_id=target_preparateur_id,
-        actor_id=current_user.id,
-    )
-    await db.commit()
-
-    ids = [c.id for c in commandes]
-    reload_result = await db.execute(
-        select(Commande)
-        .where(Commande.id.in_(ids))
-        .options(
-            selectinload(Commande.caddies),
-            selectinload(Commande.lignes),
-        )
-    )
-    reloaded = list(reload_result.scalars().all())
-
-    pharm_ids = {c.pharmacien_id for c in reloaded}
-    users_result = await db.execute(select(User).where(User.id.in_(pharm_ids)))
-    users_map = {u.id: u for u in users_result.scalars().all()}
-
-    prep_result = await db.execute(select(User).where(User.id == target_preparateur_id))
-    prep_user = prep_result.scalar_one_or_none()
-
-    items = [
-        OrderDetailResponse(
-            **_enrich_order(
-                c,
-                users_map.get(c.pharmacien_id),
-                None,
-                viewer_role=current_user.role.value,
-                preparateur=prep_user,
-            )
-        )
-        for c in reloaded
-    ]
+    """Full caddie pool (10 caddies) with availability + occupant ref."""
+    if current_user.role.value not in ("preparateur", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    items = await _list_caddie_pool(db)
     return {"items": [i.model_dump(mode="json") for i in items]}
 
 
-@router.get("/preparateurs")
-async def list_preparateurs(
+@router.get("/caddies/pool/available")
+async def list_caddies_pool_available(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> dict:
-    """Lightweight list of preparateurs for the operatrice bulk-claim dropdown."""
-    if current_user.role.value not in ("operatrice", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    from app.models.user import UserRole
-
-    result = await db.execute(
-        select(User)
-        .where(User.role == UserRole.PREPARATEUR, User.is_active.is_(True))
-        .order_by(User.nom)
-    )
-    users = result.scalars().all()
-    return {
-        "preparateurs": [{"id": str(u.id), "nom": u.nom} for u in users],
-    }
-
-
-@router.get("/caddies/suggestions")
-async def caddies_suggestions(
-    current_user: CurrentUser,
-    db: Annotated[AsyncSession, Depends(get_db)] = None,
-    limit: int = 20,
-) -> dict:
-    """Recent caddie numeros for the current user (autocomplete)."""
+    """Only currently-free caddies."""
     if current_user.role.value not in ("preparateur", "operatrice", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-    own_q = (
-        select(Caddie.numero, func.max(Caddie.created_at).label("last_used"))
-        .where(Caddie.created_by == current_user.id)
-        .group_by(Caddie.numero)
-        .order_by(func.max(Caddie.created_at).desc())
-        .limit(min(limit, 100))
-    )
-    result = await db.execute(own_q)
-    own = [r.numero for r in result]
-
-    if not own:
-        fb_q = (
-            select(Caddie.numero, func.max(Caddie.created_at).label("last_used"))
-            .group_by(Caddie.numero)
-            .order_by(func.max(Caddie.created_at).desc())
-            .limit(min(limit, 100))
-        )
-        fb_result = await db.execute(fb_q)
-        own = [r.numero for r in fb_result]
-
-    return {"suggestions": own}
-
-
-@router.delete("/caddies/{caddie_id}")
-async def delete_caddie(
-    caddie_id: UUID,
-    current_user: CurrentUser,
-    db: Annotated[AsyncSession, Depends(get_db)] = None,
-) -> dict:
-    """Remove a caddie assignment (owner preparateur or operatrice/admin)."""
-    role = current_user.role.value
-    if role not in ("preparateur", "operatrice", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-    result = await db.execute(select(Caddie).where(Caddie.id == caddie_id))
-    caddie = result.scalar_one_or_none()
-    if not caddie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Caddie not found")
-
-    if role == "preparateur" and caddie.created_by != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Preparateur can only delete their own caddies",
-        )
-
-    db.info["actor_id"] = str(current_user.id)
-    await db.delete(caddie)
-    await db.commit()
-    return {"status": "deleted", "id": str(caddie_id)}
+    items = await _list_caddie_pool(db, only_available=True)
+    return {"items": [i.model_dump(mode="json") for i in items]}

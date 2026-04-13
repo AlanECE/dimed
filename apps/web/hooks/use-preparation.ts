@@ -40,10 +40,16 @@ export function usePreparation() {
 		[],
 	);
 
-	const finalizePreparation = useCallback(async (commandeId: string, nbColis: number) => {
+	const startPreparation = useCallback(async (commandeId: string, caddiePoolId: string) => {
+		await fetchApi(`/commandes/${commandeId}/start-preparation`, {
+			method: "PATCH",
+			body: JSON.stringify({ caddie_pool_id: caddiePoolId }),
+		});
+	}, []);
+
+	const finalizePreparation = useCallback(async (commandeId: string) => {
 		await fetchApi(`/commandes/${commandeId}/finalize-preparation`, {
 			method: "PATCH",
-			body: JSON.stringify({ nb_colis: nbColis }),
 		});
 	}, []);
 
@@ -72,6 +78,7 @@ export function usePreparation() {
 		loading,
 		fetchLignes,
 		updateLigne,
+		startPreparation,
 		finalizePreparation,
 		validateControl,
 		downloadListePrelevement,

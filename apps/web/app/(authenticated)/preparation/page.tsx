@@ -1,6 +1,6 @@
 "use client";
 
-import { BulkClaimDialog } from "@/components/bulk-claim-dialog";
+import { CaddieSelectDialog } from "@/components/caddie-select-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -14,11 +14,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { useOrderAction } from "@/hooks/use-order-action";
 import { useOrders } from "@/hooks/use-orders";
 import { usePreparation } from "@/hooks/use-preparation";
-import { useAuth } from "@/lib/auth";
-import type { LignePreparationResponse, OrderResponse } from "@/lib/types";
+import type { CaddiePoolResponse, LignePreparationResponse, OrderResponse } from "@/lib/types";
 import {
 	ArrowLeft,
 	CheckCircle2,
@@ -27,9 +25,9 @@ import {
 	Loader2,
 	Package,
 	Play,
-	Truck,
+	ShoppingCart,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function PreparationPage() {
@@ -47,7 +45,6 @@ export default function PreparationPage() {
 // ---------------------------------------------------------------------------
 
 function PreparationList({ onSelect }: { onSelect: (o: OrderResponse) => void }) {
-	const { user } = useAuth();
 	const {
 		orders: acceptees,
 		loading: loadingAcceptees,
@@ -59,45 +56,34 @@ function PreparationList({ onSelect }: { onSelect: (o: OrderResponse) => void })
 		refetch: refetchEnPrep,
 	} = useOrders({ statut: "en_preparation" });
 
+	const { startPreparation } = usePreparation();
+	const [pendingOrder, setPendingOrder] = useState<OrderResponse | null>(null);
+
 	const refetchAll = useCallback(() => {
 		refetchAcceptees();
 		refetchEnPrep();
 	}, [refetchAcceptees, refetchEnPrep]);
 
-	const { execute: startPrep, loading: starting } = useOrderAction("start-preparation", refetchAll);
+	const handleStartClick = useCallback((order: OrderResponse) => {
+		setPendingOrder(order);
+	}, []);
 
-	const canBulkClaim =
-		user?.role === "preparateur" || user?.role === "operatrice" || user?.role === "admin";
-	const [selectionMode, setSelectionMode] = useState(false);
-	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-	const [dialogOpen, setDialogOpen] = useState(false);
-
-	const selectedCommandes = useMemo(
-		() => acceptees.filter((o) => selectedIds.has(o.id)),
-		[acceptees, selectedIds],
-	);
-
-	const handleStart = useCallback(
-		async (order: OrderResponse) => {
-			await startPrep(order.id);
-			onSelect({ ...order, statut: "en_preparation" });
+	const handleCaddieConfirm = useCallback(
+		async (caddie: CaddiePoolResponse) => {
+			if (!pendingOrder) return;
+			try {
+				await startPreparation(pendingOrder.id, caddie.id);
+				toast.success(`Préparation démarrée — Caddie ${caddie.numero}`);
+				const started = { ...pendingOrder, statut: "en_preparation" };
+				setPendingOrder(null);
+				refetchAll();
+				onSelect(started);
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : "Caddie indisponible");
+			}
 		},
-		[startPrep, onSelect],
+		[pendingOrder, startPreparation, refetchAll, onSelect],
 	);
-
-	function toggleSelect(id: string) {
-		setSelectedIds((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) next.delete(id);
-			else next.add(id);
-			return next;
-		});
-	}
-
-	function exitSelectionMode() {
-		setSelectionMode(false);
-		setSelectedIds(new Set());
-	}
 
 	return (
 		<div className="flex flex-col gap-8">
@@ -109,33 +95,6 @@ function PreparationList({ onSelect }: { onSelect: (o: OrderResponse) => void })
 					<h2 className="font-heading text-xl font-bold">Préparation des commandes</h2>
 					<p className="text-[13px] text-muted-foreground">Prélèvement article par article</p>
 				</div>
-				{canBulkClaim && !selectionMode && (
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => setSelectionMode(true)}
-						className="gap-1.5 rounded-lg text-[12px] font-semibold"
-					>
-						<Truck className="h-3.5 w-3.5" />
-						Mode wave-picking
-					</Button>
-				)}
-				{selectionMode && (
-					<div className="flex items-center gap-2">
-						<Button variant="ghost" size="sm" onClick={exitSelectionMode} className="text-[12px]">
-							Annuler
-						</Button>
-						<Button
-							size="sm"
-							disabled={selectedIds.size === 0}
-							onClick={() => setDialogOpen(true)}
-							className="gap-1.5 rounded-lg bg-primary text-[12px] font-semibold shadow-sm hover:brightness-110"
-						>
-							<Truck className="h-3.5 w-3.5" />
-							Prendre en charge ({selectedIds.size})
-						</Button>
-					</div>
-				)}
 			</div>
 
 			{/* À préparer */}
@@ -144,26 +103,16 @@ function PreparationList({ onSelect }: { onSelect: (o: OrderResponse) => void })
 				orders={acceptees}
 				loading={loadingAcceptees}
 				badgeClass="bg-amber-100 text-amber-700"
-				selectionMode={selectionMode}
-				selectedIds={selectedIds}
-				onToggleSelect={toggleSelect}
-				action={(order) =>
-					selectionMode ? null : (
-						<Button
-							size="sm"
-							onClick={() => handleStart(order)}
-							disabled={starting}
-							className="h-8 gap-1.5 rounded-lg bg-primary text-[12px] font-semibold shadow-sm hover:brightness-110"
-						>
-							{starting ? (
-								<Loader2 className="h-3.5 w-3.5 animate-spin" />
-							) : (
-								<Play className="h-3.5 w-3.5" />
-							)}
-							Commencer
-						</Button>
-					)
-				}
+				action={(order) => (
+					<Button
+						size="sm"
+						onClick={() => handleStartClick(order)}
+						className="h-8 gap-1.5 rounded-lg bg-primary text-[12px] font-semibold shadow-sm hover:brightness-110"
+					>
+						<Play className="h-3.5 w-3.5" />
+						Commencer
+					</Button>
+				)}
 			/>
 
 			{/* En cours */}
@@ -185,14 +134,13 @@ function PreparationList({ onSelect }: { onSelect: (o: OrderResponse) => void })
 				)}
 			/>
 
-			<BulkClaimDialog
-				open={dialogOpen}
-				commandes={selectedCommandes}
-				onOpenChange={setDialogOpen}
-				onDone={() => {
-					exitSelectionMode();
-					refetchAll();
+			<CaddieSelectDialog
+				open={pendingOrder !== null}
+				commandeRef={pendingOrder?.reference_id ?? ""}
+				onOpenChange={(open) => {
+					if (!open) setPendingOrder(null);
 				}}
+				onConfirm={handleCaddieConfirm}
 			/>
 		</div>
 	);
@@ -204,20 +152,13 @@ function OrderSection({
 	loading,
 	badgeClass,
 	action,
-	selectionMode = false,
-	selectedIds,
-	onToggleSelect,
 }: {
 	title: string;
 	orders: OrderResponse[];
 	loading: boolean;
 	badgeClass: string;
 	action: (order: OrderResponse) => React.ReactNode;
-	selectionMode?: boolean;
-	selectedIds?: Set<string>;
-	onToggleSelect?: (id: string) => void;
 }) {
-	const cols = selectionMode ? 6 : 5;
 	return (
 		<section className="animate-fade-in-up flex flex-col gap-3">
 			<div className="flex items-center gap-2.5">
@@ -232,7 +173,6 @@ function OrderSection({
 				<Table>
 					<TableHeader>
 						<TableRow className="border-border/40 bg-muted/40 hover:bg-muted/40">
-							{selectionMode && <TableHead className="w-10" />}
 							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Référence
 							</TableHead>
@@ -245,8 +185,11 @@ function OrderSection({
 							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Statut
 							</TableHead>
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Caddie
+							</TableHead>
 							<TableHead className="text-right text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-								{selectionMode ? "Caddies" : "Action"}
+								Action
 							</TableHead>
 						</TableRow>
 					</TableHeader>
@@ -254,7 +197,7 @@ function OrderSection({
 						{loading ? (
 							Array.from({ length: 3 }).map((_, i) => (
 								<TableRow key={`sk-${i}`} className="border-border/30">
-									{Array.from({ length: cols }).map((_, j) => (
+									{Array.from({ length: 6 }).map((_, j) => (
 										<TableCell key={`sk-${i}-${j}`}>
 											<Skeleton className="h-4 w-full" />
 										</TableCell>
@@ -264,53 +207,36 @@ function OrderSection({
 						) : orders.length === 0 ? (
 							<TableRow>
 								<TableCell
-									colSpan={cols}
+									colSpan={6}
 									className="py-12 text-center text-[13px] text-muted-foreground"
 								>
 									Aucune commande
 								</TableCell>
 							</TableRow>
 						) : (
-							orders.map((order) => {
-								const checked = selectedIds?.has(order.id) ?? false;
-								return (
-									<TableRow
-										key={order.id}
-										className={`border-border/30 hover:bg-muted/40 ${
-											checked ? "bg-primary/5" : ""
-										}`}
-									>
-										{selectionMode && (
-											<TableCell>
-												<Checkbox
-													checked={checked}
-													onCheckedChange={() => onToggleSelect?.(order.id)}
-													aria-label={`Selectionner ${order.reference_id}`}
-												/>
-											</TableCell>
+							orders.map((order) => (
+								<TableRow key={order.id} className="border-border/30 hover:bg-muted/40">
+									<TableCell className="font-mono text-[13px]">{order.reference_id}</TableCell>
+									<TableCell className="text-[13px]">{order.pharmacien_nom ?? "—"}</TableCell>
+									<TableCell className="text-right text-[13px] font-semibold tabular-nums">
+										{order.montant_total.toLocaleString("fr-FR")} DA
+									</TableCell>
+									<TableCell>
+										<StatusBadge status={order.statut} />
+									</TableCell>
+									<TableCell className="text-[12px] text-muted-foreground">
+										{order.caddie_pool ? (
+											<span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 font-semibold text-primary">
+												<ShoppingCart className="h-3 w-3" />
+												{order.caddie_pool.numero}
+											</span>
+										) : (
+											"—"
 										)}
-										<TableCell className="font-mono text-[13px]">{order.reference_id}</TableCell>
-										<TableCell className="text-[13px]">{order.pharmacien_nom ?? "—"}</TableCell>
-										<TableCell className="text-right text-[13px] font-semibold tabular-nums">
-											{order.montant_total.toLocaleString("fr-FR")} DA
-										</TableCell>
-										<TableCell>
-											<StatusBadge status={order.statut} />
-										</TableCell>
-										<TableCell className="text-right">
-											{selectionMode ? (
-												<span className="text-[12px] text-muted-foreground">
-													{order.caddies?.length
-														? order.caddies.map((c) => c.numero).join(", ")
-														: "—"}
-												</span>
-											) : (
-												action(order)
-											)}
-										</TableCell>
-									</TableRow>
-								);
-							})
+									</TableCell>
+									<TableCell className="text-right">{action(order)}</TableCell>
+								</TableRow>
+							))
 						)}
 					</TableBody>
 				</Table>
@@ -333,7 +259,6 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		downloadListePrelevement,
 	} = usePreparation();
 	const [localLignes, setLocalLignes] = useState<LignePreparationResponse[]>([]);
-	const [nbColis, setNbColis] = useState(1);
 	const [saving, setSaving] = useState(false);
 
 	useEffect(() => {
@@ -348,7 +273,6 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 					qte_prelevee: l.qte_prelevee ?? l.qte_demandee,
 				})),
 			);
-			if (detail.nb_colis) setNbColis(detail.nb_colis);
 		}
 	}, [detail]);
 
@@ -413,15 +337,15 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 	const handleFinalize = useCallback(async () => {
 		setSaving(true);
 		try {
-			await finalizePreparation(order.id, nbColis);
-			toast.success("Préparation finalisée → En vérification");
+			await finalizePreparation(order.id);
+			toast.success("Préparation envoyée au contrôleur");
 			onBack();
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Erreur");
 		} finally {
 			setSaving(false);
 		}
-	}, [order.id, nbColis, finalizePreparation, onBack]);
+	}, [order.id, finalizePreparation, onBack]);
 
 	if (loading) {
 		return (
@@ -457,23 +381,16 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 				</Button>
 			</div>
 
-			{/* Caddies affectes */}
-			{order.caddies && order.caddies.length > 0 && (
+			{/* Caddie affecte */}
+			{order.caddie_pool && (
 				<div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
-					<Truck className="h-4 w-4 text-primary" />
+					<ShoppingCart className="h-4 w-4 text-primary" />
 					<span className="text-[12px] font-semibold uppercase tracking-wider text-primary">
-						Caddies affectes :
+						Caddie affecté :
 					</span>
-					<div className="flex flex-wrap gap-1.5">
-						{order.caddies.map((c) => (
-							<span
-								key={c.id}
-								className="inline-flex items-center rounded-md bg-primary/15 px-2 py-0.5 text-[12px] font-semibold text-primary"
-							>
-								{c.numero}
-							</span>
-						))}
-					</div>
+					<span className="inline-flex items-center rounded-md bg-primary/15 px-2 py-0.5 text-[12px] font-semibold text-primary">
+						{order.caddie_pool.numero}
+					</span>
 				</div>
 			)}
 
@@ -564,21 +481,8 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 				</Table>
 			</div>
 
-			{/* Footer: nb colis + finalize */}
-			<div className="flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 shadow-sm">
-				<div className="flex items-center gap-3">
-					<label htmlFor="nb-colis" className="text-[13px] font-medium">
-						Nombre de colis
-					</label>
-					<Input
-						id="nb-colis"
-						type="number"
-						min={1}
-						value={nbColis}
-						onChange={(e) => setNbColis(Number.parseInt(e.target.value) || 1)}
-						className="h-8 w-20 text-center text-[13px]"
-					/>
-				</div>
+			{/* Footer: finalize */}
+			<div className="flex items-center justify-end rounded-xl border border-border/60 bg-card px-5 py-4 shadow-sm">
 				<Button
 					onClick={handleFinalize}
 					disabled={!allVerified || saving}

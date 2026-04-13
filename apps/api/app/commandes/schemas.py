@@ -40,23 +40,17 @@ class UpdateRemisesRequest(BaseModel):
     lines: list[LineRemise] = Field(min_length=1)
 
 
-class CaddieResponse(BaseModel):
+class CaddiePoolResponse(BaseModel):
     id: UUID
     numero: str
-    created_at: datetime
+    is_available: bool
+    current_commande_ref: str | None = None
 
     model_config = {"from_attributes": True}
 
 
-class CaddieAssignment(BaseModel):
-    commande_id: UUID
-    numeros: list[str] = Field(min_length=1, max_length=20)
-
-
-class BulkClaimRequest(BaseModel):
-    commande_ids: list[UUID] = Field(min_length=1, max_length=50)
-    preparateur_id: UUID | None = None
-    caddies: list[CaddieAssignment] = Field(min_length=1)
+class StartPreparationRequest(BaseModel):
+    caddie_pool_id: UUID
 
 
 class OrderResponse(BaseModel):
@@ -75,10 +69,24 @@ class OrderResponse(BaseModel):
     camion_nom: str | None = None
     pharmacien_nom: str | None = None
     pharmacien_email: str | None = None
-    caddies: list[CaddieResponse] = Field(default_factory=list)
+    operatrice_comment: str | None = None
+    caddie_pool: CaddiePoolResponse | None = None
 
     model_config = {"from_attributes": True}
 
 
 class OrderDetailResponse(OrderResponse):
     lignes: list[LigneResponse]
+
+
+class EditLineRequest(BaseModel):
+    qte_demandee: int = Field(ge=1)
+
+
+class AddLineRequest(BaseModel):
+    medicament_id: UUID
+    qte_demandee: int = Field(ge=1)
+
+
+class UpdateCommentRequest(BaseModel):
+    comment: str | None = Field(default=None, max_length=500)

@@ -72,6 +72,7 @@ export type LigneResponse = {
 	qte_demandee: number;
 	prix_unitaire: number;
 	remise_pct: number;
+	ocr_verifie: boolean;
 	n_lot: string | null;
 };
 
@@ -79,16 +80,11 @@ export type UpdateRemisesRequest = {
 	lines: { ligne_id: string; remise_pct: number }[];
 };
 
-export type CaddieResponse = {
+export type CaddiePoolResponse = {
 	id: string;
 	numero: string;
-	created_at: string;
-};
-
-export type BulkClaimPayload = {
-	commande_ids: string[];
-	preparateur_id: string | null;
-	caddies: { commande_id: string; numeros: string[] }[];
+	is_available: boolean;
+	current_commande_ref: string | null;
 };
 
 export type OrderResponse = {
@@ -107,7 +103,8 @@ export type OrderResponse = {
 	camion_nom: string | null;
 	pharmacien_nom: string | null;
 	pharmacien_email: string | null;
-	caddies: CaddieResponse[];
+	operatrice_comment: string | null;
+	caddie_pool: CaddiePoolResponse | null;
 };
 
 export type OrderDetailResponse = OrderResponse & {
