@@ -48,61 +48,78 @@ export function CartSidebar() {
 					</div>
 				) : (
 					<div className="flex flex-col gap-3">
-						{items.map((item) => (
-							<div
-								key={item.medicament.id}
-								className="animate-fade-in rounded-xl border border-border/40 bg-muted/30 p-3 transition-colors hover:bg-muted/50"
-							>
-								<div className="flex items-start justify-between gap-2">
-									<span className="text-[13px] font-semibold leading-tight text-foreground">
-										{item.medicament.designation}
-									</span>
-									<Button
-										variant="ghost"
-										size="icon"
-										className="h-6 w-6 shrink-0 text-muted-foreground/60 hover:text-destructive"
-										onClick={() => removeItem(item.medicament.id)}
-										aria-label={`Supprimer ${item.medicament.designation}`}
-									>
-										<Trash2 className="h-3 w-3" />
-									</Button>
-								</div>
-								<div className="mt-2 flex items-center justify-between">
-									<div className="flex items-center gap-0.5">
+						{items.map((item) => {
+							const stock = item.medicament.stock_quantity;
+							const overStock = item.qte > stock;
+							const atMax = item.qte >= stock;
+							return (
+								<div
+									key={item.medicament.id}
+									className={`animate-fade-in rounded-xl border p-3 transition-colors ${
+										overStock
+											? "border-red-300 bg-red-50/60 hover:bg-red-50/80"
+											: "border-border/40 bg-muted/30 hover:bg-muted/50"
+									}`}
+								>
+									<div className="flex items-start justify-between gap-2">
+										<span className="text-[13px] font-semibold leading-tight text-foreground">
+											{item.medicament.designation}
+										</span>
 										<Button
 											variant="ghost"
 											size="icon"
-											className="h-7 w-7 rounded-lg"
-											onClick={() => updateQte(item.medicament.id, item.qte - 1)}
-											aria-label="Diminuer la quantité"
+											className="h-6 w-6 shrink-0 text-muted-foreground/60 hover:text-destructive"
+											onClick={() => removeItem(item.medicament.id)}
+											aria-label={`Supprimer ${item.medicament.designation}`}
 										>
-											<Minus className="h-3 w-3" />
-										</Button>
-										<Input
-											type="number"
-											min={1}
-											value={item.qte}
-											onChange={(e) =>
-												updateQte(item.medicament.id, Number.parseInt(e.target.value, 10) || 1)
-											}
-											className="h-7 w-12 rounded-lg border-border/40 bg-card text-center text-[12px] tabular-nums"
-										/>
-										<Button
-											variant="ghost"
-											size="icon"
-											className="h-7 w-7 rounded-lg"
-											onClick={() => updateQte(item.medicament.id, item.qte + 1)}
-											aria-label="Augmenter la quantité"
-										>
-											<Plus className="h-3 w-3" />
+											<Trash2 className="h-3 w-3" />
 										</Button>
 									</div>
-									<span className="text-[12px] font-semibold tabular-nums text-muted-foreground">
-										{(item.medicament.ppa * item.qte).toLocaleString("fr-FR")} DA
-									</span>
+									<div className="mt-2 flex items-center justify-between">
+										<div className="flex items-center gap-0.5">
+											<Button
+												variant="ghost"
+												size="icon"
+												className="h-7 w-7 rounded-lg"
+												onClick={() => updateQte(item.medicament.id, item.qte - 1)}
+												aria-label="Diminuer la quantité"
+											>
+												<Minus className="h-3 w-3" />
+											</Button>
+											<Input
+												type="number"
+												min={1}
+												max={stock}
+												value={item.qte}
+												onChange={(e) =>
+													updateQte(item.medicament.id, Number.parseInt(e.target.value, 10) || 1)
+												}
+												className="h-7 w-12 rounded-lg border-border/40 bg-card text-center text-[12px] tabular-nums"
+											/>
+											<Button
+												variant="ghost"
+												size="icon"
+												className="h-7 w-7 rounded-lg"
+												onClick={() => updateQte(item.medicament.id, item.qte + 1)}
+												disabled={atMax}
+												title={atMax ? `Stock max : ${stock}` : "Augmenter la quantité"}
+												aria-label="Augmenter la quantité"
+											>
+												<Plus className="h-3 w-3" />
+											</Button>
+										</div>
+										<span className="text-[12px] font-semibold tabular-nums text-muted-foreground">
+											{(item.medicament.ppa * item.qte).toLocaleString("fr-FR")} DA
+										</span>
+									</div>
+									{overStock && (
+										<p className="mt-2 text-[11px] font-medium text-red-700">
+											Stock disponible : {stock}. Reduisez la quantite.
+										</p>
+									)}
 								</div>
-							</div>
-						))}
+							);
+						})}
 					</div>
 				)}
 			</div>

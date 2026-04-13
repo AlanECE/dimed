@@ -36,7 +36,20 @@ export function ConfirmOrderDialog({ open, onOpenChange }: ConfirmOrderDialogPro
 	const [submitting, setSubmitting] = useState(false);
 	const router = useRouter();
 
+	const outOfStock = items.filter(
+		(i) => i.medicament.stock_quantity <= 0 || i.qte > i.medicament.stock_quantity,
+	);
+	const hasBlockingStockIssue = outOfStock.length > 0;
+
 	async function handleConfirm() {
+		if (hasBlockingStockIssue) {
+			toast.error(
+				`Rupture de stock : ${outOfStock
+					.map((i) => `${i.medicament.designation} (stock=${i.medicament.stock_quantity})`)
+					.join(", ")}`,
+			);
+			return;
+		}
 		setSubmitting(true);
 		try {
 			const payload = {
@@ -108,7 +121,7 @@ export function ConfirmOrderDialog({ open, onOpenChange }: ConfirmOrderDialogPro
 					</AlertDialogCancel>
 					<AlertDialogAction
 						onClick={handleConfirm}
-						disabled={submitting}
+						disabled={submitting || hasBlockingStockIssue}
 						className="rounded-lg bg-primary font-semibold shadow-sm hover:brightness-110"
 					>
 						{submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

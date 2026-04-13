@@ -188,6 +188,12 @@ export function MedicationTable() {
 											size="icon"
 											className="h-8 w-8 rounded-lg text-primary/70 hover:bg-primary/10 hover:text-primary"
 											onClick={() => addItem(med)}
+											disabled={med.stock_quantity === 0}
+											title={
+												med.stock_quantity === 0
+													? "Produit en rupture de stock"
+													: `Ajouter ${med.designation}`
+											}
 											aria-label={`Ajouter ${med.designation}`}
 										>
 											<Plus className="h-4 w-4" />
