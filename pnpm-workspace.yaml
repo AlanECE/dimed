@@ -2,3 +2,4 @@ packages:
   - "apps/web"
   - "packages/shared-types"
   - "packages/ui"
+  - "packages/skills"
