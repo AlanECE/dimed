@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1152,6 +1152,127 @@ async def update_ligne(
         ligne.ocr_verifie = body.ocr_verifie
     await db.commit()
     return {"status": "ok"}
+
+
+_MAX_OCR_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MiB
+
+
+@router.post("/{commande_id}/ocr-scan")
+async def ocr_scan_prelevement(
+    commande_id: UUID,
+    current_user: CurrentUser,
+    file: Annotated[UploadFile, File(...)],
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Upload a scanned picking sheet and auto-toggle ocr_verifie on matched lines.
+
+    The image is forwarded to OpenRouter (free vision model, configurable via
+    DIMED_OCR_MODEL) along with the list of expected code_article values. The
+    model returns a JSON array of detected lines which we match back and
+    persist. No quantity is written — OCR is only used as a confirmation
+    marker, the preparateur still validates manually.
+    """
+    from app.ocr.service import (
+        OcrConfigurationError,
+        OcrLineHint,
+        OcrUpstreamError,
+        parse_prelevement_scan,
+    )
+
+    if current_user.role.value not in ("preparateur", "operatrice", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Preparateur/operatrice/admin only",
+        )
+
+    commande = await get_order_with_lines(db, commande_id)
+    if not commande:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found",
+        )
+    if commande.statut not in (
+        OrderStatus.EN_PREPARATION,
+        OrderStatus.PRELEVEE_PARTIELLEMENT,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"OCR scan not allowed from status {commande.statut.value}",
+        )
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty file",
+        )
+    if len(image_bytes) > _MAX_OCR_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image exceeds 10 MiB limit",
+        )
+    content_type = file.content_type or "image/jpeg"
+    if not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported content type: {content_type}",
+        )
+
+    med_ids = [ln.medicament_id for ln in commande.lignes]
+    med_result = await db.execute(
+        select(Medicament.id, Medicament.code_article).where(Medicament.id.in_(med_ids))
+    )
+    code_by_med: dict[UUID, str] = {row.id: row.code_article for row in med_result}
+
+    hints = [
+        OcrLineHint(
+            ligne_id=str(ln.id),
+            code_article=code_by_med.get(ln.medicament_id, "")[:32],
+            designation=ln.designation,
+            qte_demandee=ln.qte_demandee,
+        )
+        for ln in commande.lignes
+        if code_by_med.get(ln.medicament_id)
+    ]
+    if not hints:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No article codes available for OCR matching",
+        )
+
+    try:
+        matches = await parse_prelevement_scan(image_bytes, content_type, hints)
+    except OcrConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except OcrUpstreamError as exc:
+        logger.warning("OCR upstream failure on commande=%s: %s", commande_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"OCR service error: {exc}",
+        ) from exc
+
+    matched_ids: set[UUID] = set()
+    for m in matches:
+        try:
+            matched_ids.add(UUID(m.ligne_id))
+        except ValueError:
+            continue
+
+    if matched_ids:
+        db.info["actor_id"] = str(current_user.id)
+        for ligne in commande.lignes:
+            if ligne.id in matched_ids:
+                ligne.ocr_verifie = True
+        await db.commit()
+
+    return {
+        "matched_count": len(matched_ids),
+        "total_lines": len(commande.lignes),
+        "matched_ligne_ids": [str(i) for i in matched_ids],
+    }
 
 
 @router.patch("/{commande_id}/finalize-preparation")

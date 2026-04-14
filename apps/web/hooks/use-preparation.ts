@@ -59,6 +59,27 @@ export function usePreparation() {
 		});
 	}, []);
 
+	const scanPrelevement = useCallback(
+		async (
+			commandeId: string,
+			file: File,
+		): Promise<{ matched_count: number; total_lines: number; matched_ligne_ids: string[] }> => {
+			const form = new FormData();
+			form.append("file", file);
+			const res = await fetch(`${API_BASE}/commandes/${commandeId}/ocr-scan`, {
+				method: "POST",
+				body: form,
+				credentials: "include",
+			});
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({ detail: "Erreur OCR" }));
+				throw new Error(body.detail ?? `OCR ${res.status}`);
+			}
+			return res.json();
+		},
+		[],
+	);
+
 	const downloadListePrelevement = useCallback(async (commandeId: string) => {
 		const res = await fetch(`${API_BASE}/commandes/${commandeId}/liste-prelevement`, {
 			credentials: "include",
@@ -82,5 +103,6 @@ export function usePreparation() {
 		finalizePreparation,
 		validateControl,
 		downloadListePrelevement,
+		scanPrelevement,
 	};
 }

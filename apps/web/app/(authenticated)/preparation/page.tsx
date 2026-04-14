@@ -25,9 +25,10 @@ import {
 	Loader2,
 	Package,
 	Play,
+	ScanLine,
 	ShoppingCart,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export default function PreparationPage() {
@@ -257,9 +258,12 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		updateLigne,
 		finalizePreparation,
 		downloadListePrelevement,
+		scanPrelevement,
 	} = usePreparation();
 	const [localLignes, setLocalLignes] = useState<LignePreparationResponse[]>([]);
 	const [saving, setSaving] = useState(false);
+	const [scanning, setScanning] = useState(false);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
 		fetchLignes(order.id);
@@ -332,6 +336,26 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		[order.id, localLignes, updateLigne],
 	);
 
+	const handleScanFile = useCallback(
+		async (file: File) => {
+			setScanning(true);
+			try {
+				const res = await scanPrelevement(order.id, file);
+				if (res.matched_count === 0) {
+					toast.warning("Aucune ligne reconnue sur le scan");
+				} else {
+					toast.success(`${res.matched_count}/${res.total_lines} lignes cochées via OCR`);
+					await fetchLignes(order.id);
+				}
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : "Erreur OCR");
+			} finally {
+				setScanning(false);
+			}
+		},
+		[order.id, scanPrelevement, fetchLignes],
+	);
+
 	const allVerified = localLignes.length > 0 && localLignes.every((l) => l.verifie);
 
 	const handleFinalize = useCallback(async () => {
@@ -370,6 +394,31 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 						{order.pharmacien_nom} — {order.montant_total.toLocaleString("fr-FR")} DA
 					</p>
 				</div>
+				<Button
+					variant="outline"
+					size="sm"
+					onClick={() => fileInputRef.current?.click()}
+					disabled={scanning}
+					className="gap-1.5 text-[12px]"
+				>
+					{scanning ? (
+						<Loader2 className="h-3.5 w-3.5 animate-spin" />
+					) : (
+						<ScanLine className="h-3.5 w-3.5" />
+					)}
+					Scanner OCR
+				</Button>
+				<input
+					ref={fileInputRef}
+					type="file"
+					accept="image/*"
+					className="hidden"
+					onChange={(e) => {
+						const f = e.target.files?.[0];
+						if (f) handleScanFile(f);
+						e.target.value = "";
+					}}
+				/>
 				<Button
 					variant="outline"
 					size="sm"

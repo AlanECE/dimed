@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     smtp_tls: bool = False
     smtp_ssl: bool = False
 
+    # OCR via OpenRouter (free vision models)
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    ocr_model: str = "google/gemma-3-27b-it:free"
+    ocr_timeout_seconds: float = 45.0
+
     model_config = {"env_prefix": "DIMED_"}
 
     @model_validator(mode="after")
