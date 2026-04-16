@@ -41,6 +41,27 @@ async def list_creances(
     count_q = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_q)).scalar() or 0
 
+    # Aggregate totals over the full filtered set (not just current page)
+    def _base_filter(q):
+        if current_user.role.value == "pharmacien":
+            q = q.where(Creance.pharmacien_id == current_user.id)
+        if statut:
+            q = q.where(Creance.statut == statut)
+        return q
+
+    sum_total = (await db.execute(
+        _base_filter(select(func.coalesce(func.sum(Creance.montant_total), 0)))
+    )).scalar() or 0
+    sum_paye = (await db.execute(
+        _base_filter(select(func.coalesce(func.sum(Creance.montant_paye), 0)))
+    )).scalar() or 0
+    sum_retard = (await db.execute(
+        _base_filter(
+            select(func.coalesce(func.sum(Creance.montant_total - Creance.montant_paye), 0))
+            .where(Creance.statut == CreanceStatut.EN_RETARD)
+        )
+    )).scalar() or 0
+
     query = query.order_by(Creance.echeance.asc()).offset(offset).limit(min(limit, 100))
     result = await db.execute(query)
     rows = result.all()
@@ -69,7 +90,17 @@ async def list_creances(
             }
         )
 
-    return {"items": items, "total": total, "limit": limit, "offset": offset}
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "summary": {
+            "total_montant": float(sum_total),
+            "total_paye": float(sum_paye),
+            "total_en_retard": float(sum_retard),
+        },
+    }
 
 
 @router.patch("/{creance_id}/payment")

@@ -141,24 +141,72 @@ async def _require_delivery_access(
         )
 
 
+@router.get("/pharmaciens")
+async def list_pharmaciens(
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Return all active pharmaciens — accessible to operatrice and admin."""
+    if current_user.role.value not in ("operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    from app.models.user import UserRole
+
+    result = await db.execute(
+        select(User)
+        .where(User.role == UserRole.PHARMACIEN, User.is_active.is_(True))
+        .order_by(User.nom)
+    )
+    pharmaciens = result.scalars().all()
+    return {
+        "pharmaciens": [
+            {
+                "id": str(u.id),
+                "nom": u.nom,
+                "email": u.email,
+                "adresse": u.adresse,
+                "secteur": u.secteur,
+                "telephone": u.telephone,
+            }
+            for u in pharmaciens
+        ]
+    }
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create(
     body: CreateOrderRequest,
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> OrderDetailResponse:
-    if current_user.role.value != "pharmacien":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Pharmacien only")
+    role = current_user.role.value
+
+    if role == "operatrice":
+        if not body.pharmacien_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="pharmacien_id requis pour une operatrice",
+            )
+        pharm_result = await db.execute(select(User).where(User.id == body.pharmacien_id))
+        pharmacien = pharm_result.scalar_one_or_none()
+        if not pharmacien or pharmacien.role.value != "pharmacien":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pharmacien introuvable")
+        owner_id = body.pharmacien_id
+    elif role == "pharmacien":
+        owner_id = current_user.id
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Accès refusé")
 
     db.info["actor_id"] = str(current_user.id)
-    commande = await create_order(db, current_user.id, body)
+    commande = await create_order(db, owner_id, body)
     await db.commit()
     await db.refresh(commande, ["lignes"])
+    pharm_result = await db.execute(select(User).where(User.id == owner_id))
+    pharmacien = pharm_result.scalar_one_or_none()
     data = _enrich_order(
         commande,
-        current_user,
+        pharmacien,
         None,
-        viewer_role=current_user.role.value,
+        viewer_role=role,
     )
     return OrderDetailResponse(**data)
 

@@ -39,7 +39,7 @@ export default function CreancesPage() {
 	const [page, setPage] = useState(0);
 	const isPharmacien = user?.role === "pharmacien";
 
-	const { creances, total, loading } = useCreances({
+	const { creances, total, summary, loading } = useCreances({
 		statut,
 		limit: PAGE_SIZE,
 		offset: page * PAGE_SIZE,
@@ -47,11 +47,9 @@ export default function CreancesPage() {
 
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-	const totalCreances = creances.reduce((s, c) => s + c.montant_total, 0);
-	const totalEnRetard = creances
-		.filter((c) => c.statut === "en_retard")
-		.reduce((s, c) => s + c.reste_a_payer, 0);
-	const totalPaye = creances.reduce((s, c) => s + c.montant_paye, 0);
+	const totalCreances = summary.total_montant;
+	const totalEnRetard = summary.total_en_retard;
+	const totalPaye = summary.total_paye;
 
 	return (
 		<div className="flex flex-col gap-6">

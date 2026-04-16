@@ -593,14 +593,16 @@ def generate_facture_pdf(
         words_style,
     )
 
+    qr_facture = _make_qr_image(commande_ref, 2.8)
     bottom_row = Table(
-        [[_cachet_drawing(), words_p]],
-        colWidths=[3.2 * cm, 15.8 * cm],
+        [[_cachet_drawing(), words_p, qr_facture]],
+        colWidths=[3.2 * cm, 12.6 * cm, 3.2 * cm],
     )
     bottom_row.setStyle(
         TableStyle(
             [
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (2, 0), (2, 0), "RIGHT"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                 ("TOPPADDING", (0, 0), (-1, -1), 4),

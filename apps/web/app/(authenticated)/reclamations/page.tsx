@@ -1,18 +1,8 @@
 "use client";
 
 import { StatusBadge } from "@/components/status-badge";
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
 	Select,
 	SelectContent,
@@ -31,9 +21,9 @@ import {
 } from "@/components/ui/table";
 import { useReclamations } from "@/hooks/use-reclamations";
 import { useAuth } from "@/lib/auth";
-import { ChevronLeft, ChevronRight, Loader2, MessageSquareWarning, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquareWarning } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
-import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
 
@@ -45,55 +35,27 @@ const STATUT_OPTIONS = [
 	{ value: "rejetee", label: "Rejetée" },
 ];
 
-const MOTIF_OPTIONS = [
-	{ value: "produit_endommage", label: "Produit endommagé" },
-	{ value: "produit_manquant", label: "Produit manquant" },
-	{ value: "erreur_facturation", label: "Erreur de facturation" },
-	{ value: "erreur_produit", label: "Erreur de produit" },
-	{ value: "autre", label: "Autre" },
-];
-
-const MOTIF_LABELS: Record<string, string> = Object.fromEntries(
-	MOTIF_OPTIONS.map((o) => [o.value, o.label]),
-);
+const MOTIF_LABELS: Record<string, string> = {
+	produit_endommage: "Produit endommagé",
+	produit_manquant: "Produit manquant",
+	erreur_facturation: "Erreur de facturation",
+	erreur_produit: "Erreur de produit",
+	autre: "Autre",
+};
 
 export default function ReclamationsPage() {
 	const { user } = useAuth();
 	const [statut, setStatut] = useState("all");
 	const [page, setPage] = useState(0);
-	const [dialogOpen, setDialogOpen] = useState(false);
-	const [commandeId, setCommandeId] = useState("");
-	const [motif, setMotif] = useState("produit_endommage");
-	const [description, setDescription] = useState("");
-	const [submitting, setSubmitting] = useState(false);
 	const isPharmacien = user?.role === "pharmacien";
 
-	const { reclamations, total, loading, createReclamation } = useReclamations({
+	const { reclamations, total, loading } = useReclamations({
 		statut,
 		limit: PAGE_SIZE,
 		offset: page * PAGE_SIZE,
 	});
 
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-	async function handleCreate() {
-		if (!commandeId.trim()) {
-			toast.error("Veuillez entrer l'ID de commande");
-			return;
-		}
-		setSubmitting(true);
-		try {
-			await createReclamation({ commande_id: commandeId, motif, description });
-			toast.success("Réclamation créée");
-			setDialogOpen(false);
-			setCommandeId("");
-			setDescription("");
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Erreur");
-		} finally {
-			setSubmitting(false);
-		}
-	}
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -105,18 +67,22 @@ export default function ReclamationsPage() {
 					<div>
 						<h2 className="font-heading text-xl font-bold">Réclamations</h2>
 						<p className="text-[13px] text-muted-foreground">
-							Déclaration et suivi des réclamations
+							{isPharmacien
+								? "Pour réclamation, cliquez sur ⚠ depuis vos commandes"
+								: "Suivi et traitement des réclamations"}
 						</p>
 					</div>
 				</div>
-				{(isPharmacien || user?.role === "admin") && (
-					<Button
-						onClick={() => setDialogOpen(true)}
-						className="h-9 gap-1.5 rounded-lg bg-primary text-[13px] font-semibold shadow-sm hover:brightness-110"
-					>
-						<Plus className="h-4 w-4" />
-						Nouvelle réclamation
-					</Button>
+				{isPharmacien && (
+					<Link href="/commandes">
+						<Button
+							variant="outline"
+							className="h-9 gap-1.5 rounded-lg text-[13px] font-semibold border-orange-200 text-orange-600 hover:bg-orange-50"
+						>
+							<MessageSquareWarning className="h-4 w-4" />
+							Aller à mes commandes
+						</Button>
+					</Link>
 				)}
 			</div>
 
@@ -248,66 +214,6 @@ export default function ReclamationsPage() {
 					</Button>
 				</div>
 			</div>
-
-			{/* Create dialog */}
-			<AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-				<AlertDialogContent className="rounded-xl">
-					<AlertDialogHeader>
-						<AlertDialogTitle className="font-heading font-bold">
-							Nouvelle réclamation
-						</AlertDialogTitle>
-					</AlertDialogHeader>
-					<div className="space-y-4">
-						<div className="space-y-1.5">
-							<label className="text-[13px] font-semibold text-foreground/80">ID Commande</label>
-							<Input
-								value={commandeId}
-								onChange={(e) => setCommandeId(e.target.value)}
-								placeholder="UUID de la commande"
-								className="h-10 rounded-lg border-border/60 text-[13px]"
-							/>
-						</div>
-						<div className="space-y-1.5">
-							<label className="text-[13px] font-semibold text-foreground/80">Motif</label>
-							<Select value={motif} onValueChange={(v) => setMotif(v ?? "autre")}>
-								<SelectTrigger className="rounded-lg border-border/60 text-[13px]">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{MOTIF_OPTIONS.map((o) => (
-										<SelectItem key={o.value} value={o.value}>
-											{o.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-						<div className="space-y-1.5">
-							<label className="text-[13px] font-semibold text-foreground/80">Description</label>
-							<textarea
-								value={description}
-								onChange={(e) => setDescription(e.target.value)}
-								placeholder="Décrivez le problème..."
-								rows={3}
-								className="w-full rounded-lg border border-border/60 bg-card px-3 py-2 text-[13px] outline-none focus:border-primary/30 focus:ring-2 focus:ring-primary/10"
-							/>
-						</div>
-					</div>
-					<AlertDialogFooter>
-						<AlertDialogCancel className="rounded-lg" disabled={submitting}>
-							Annuler
-						</AlertDialogCancel>
-						<AlertDialogAction
-							onClick={handleCreate}
-							disabled={submitting}
-							className="rounded-lg bg-primary font-semibold shadow-sm hover:brightness-110"
-						>
-							{submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-							Créer
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
 		</div>
 	);
 }
