@@ -20,7 +20,7 @@ class PaymentRequest(BaseModel):
     montant: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
 
 
-@router.get("/")
+@router.get("")
 async def list_creances(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
