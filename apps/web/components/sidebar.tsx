@@ -18,6 +18,7 @@ import {
 	PanelLeftClose,
 	PanelLeftOpen,
 	Pill,
+	PlusCircle,
 	Receipt,
 	Route,
 	ScrollText,
@@ -44,6 +45,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
 	],
 	operatrice: [
 		{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+		{ href: "/dashboard/nouvelle-commande", label: "Nouvelle commande", icon: PlusCircle },
 		{ href: "/dashboard/routes", label: "Feuilles de route", icon: Route },
 		{ href: "/dashboard/camions", label: "Lignes de route", icon: Route },
 		{ href: "/arrivages", label: "Arrivages", icon: PackagePlus },

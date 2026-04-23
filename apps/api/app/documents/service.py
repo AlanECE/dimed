@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.documents.pdf_generator import generate_bl_pdf, generate_facture_pdf
 from app.models.arrivage import Arrivage
 from app.models.commande import Commande, LigneCommande, OrderStatus
+from app.models.creance import Creance, CreanceStatut
 from app.models.document import BonDeLivraison, Facture, FeuilleDeRoute
 from app.models.medicament import Medicament
 from app.models.references import next_bl_ref, next_facture_ref
@@ -147,6 +148,19 @@ async def generate_order_documents(
         montant_ttc=commande.montant_total,  # no tax in v1
     )
     db.add(facture)
+    await db.flush()  # ensure facture row exists before creance FK references it
+
+    # Create the corresponding créance (payment tracking), due in 30 days
+    creance = Creance(
+        id=uuid4(),
+        pharmacien_id=commande.pharmacien_id,
+        facture_id=facture.id,
+        montant_total=commande.montant_total,
+        montant_paye=Decimal("0"),
+        statut=CreanceStatut.EN_ATTENTE,
+        echeance=date.fromtimestamp((now.timestamp() + 30 * 86400)),
+    )
+    db.add(creance)
 
     bl = BonDeLivraison(
         id=uuid4(),

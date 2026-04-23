@@ -12,6 +12,7 @@ class ArticleItem(BaseModel):
 
 class CreateOrderRequest(BaseModel):
     articles: list[ArticleItem] = Field(min_length=1)
+    pharmacien_id: UUID | None = None  # operatrice only — create on behalf of a pharmacien
 
 
 class AssignCamionRequest(BaseModel):
