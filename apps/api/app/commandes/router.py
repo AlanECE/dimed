@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only, selectinload
+from sqlalchemy.orm import selectinload
 
 from app.arrivages.dlc import format_dlc, resolve_dlc
 from app.auth.dependencies import CurrentUser
@@ -190,7 +190,9 @@ async def create(
         pharm_result = await db.execute(select(User).where(User.id == body.pharmacien_id))
         pharmacien = pharm_result.scalar_one_or_none()
         if not pharmacien or pharmacien.role.value != "pharmacien":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pharmacien introuvable")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Pharmacien introuvable"
+            )
         owner_id = body.pharmacien_id
     elif role == "pharmacien":
         owner_id = current_user.id
@@ -1076,7 +1078,29 @@ async def mark_delivered(
 class UpdateLigneRequest(BaseModel):
     qte_prelevee: int | None = Field(default=None, ge=0)
     verifie: bool | None = None
-    dlc: date | None = None
+    n_lot: str | None = Field(default=None, max_length=50)
+    fab: date | None = None
+    exp: date | None = None
+    ppa: Decimal | None = Field(default=None, max_digits=10, decimal_places=2)
+
+
+def _ligne_to_dict(ln: LigneCommande, vignette=None) -> dict:
+    """Serialize a preparation line to JSON-friendly dict."""
+    return {
+        "id": str(ln.id),
+        "medicament_id": str(ln.medicament_id),
+        "designation": ln.designation,
+        "qte_demandee": ln.qte_demandee,
+        "qte_prelevee": ln.qte_prelevee,
+        "prix_unitaire": float(ln.prix_unitaire),
+        "remise_pct": float(ln.remise_pct),
+        "n_lot": ln.n_lot,
+        "fab": ln.fab.isoformat() if ln.fab else None,
+        "exp": ln.exp.isoformat() if ln.exp else None,
+        "ppa": str(ln.ppa) if ln.ppa is not None else None,
+        "verifie": ln.verifie,
+        "vignette": _vignette_to_dict(vignette) if vignette is not None else None,
+    }
 
 
 @router.get("/{commande_id}/lignes")
@@ -1102,22 +1126,33 @@ async def get_lignes(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Order not found",
         )
+
+    from app.models.vignette import Vignette
+
+    ligne_ids = [ln.id for ln in commande.lignes]
+    vignette_by_lid: dict[UUID, Vignette] = {}
+    if ligne_ids:
+        v_result = await db.execute(select(Vignette).where(Vignette.ligne_id.in_(ligne_ids)))
+        for v in v_result.scalars():
+            vignette_by_lid[v.ligne_id] = v
+
+    # medicament_ppa for divergence pill
+    med_result = await db.execute(
+        select(Medicament.id, Medicament.ppa).where(
+            Medicament.id.in_([ln.medicament_id for ln in commande.lignes])
+        )
+    )
+    ppa_by_med = {row.id: row.ppa for row in med_result}
+
+    lignes_out = []
+    for ln in commande.lignes:
+        d = _ligne_to_dict(ln, vignette_by_lid.get(ln.id))
+        cat_ppa = ppa_by_med.get(ln.medicament_id)
+        d["medicament_ppa"] = str(cat_ppa) if cat_ppa is not None else None
+        lignes_out.append(d)
+
     return {
-        "lignes": [
-            {
-                "id": str(ln.id),
-                "medicament_id": str(ln.medicament_id),
-                "designation": ln.designation,
-                "qte_demandee": ln.qte_demandee,
-                "qte_prelevee": ln.qte_prelevee,
-                "prix_unitaire": float(ln.prix_unitaire),
-                "remise_pct": float(ln.remise_pct),
-                "n_lot": ln.n_lot,
-                "dlc": ln.dlc.isoformat() if ln.dlc else None,
-                "verifie": ln.verifie,
-            }
-            for ln in commande.lignes
-        ],
+        "lignes": lignes_out,
         "nb_colis": commande.nb_colis,
         "visa_preparateur": commande.visa_preparateur,
         "visa_controleur": commande.visa_controleur,
@@ -1132,7 +1167,7 @@ async def update_ligne(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> dict:
-    """Update a line's picked quantity and verified status."""
+    """Update a line's picked quantity, verified status, lot/fab/exp/ppa."""
     if current_user.role.value not in (
         "preparateur",
         "controleur",
@@ -1144,7 +1179,6 @@ async def update_ligne(
             detail="Access denied",
         )
 
-    # Verify order is in preparation
     commande = await get_order_with_lines(db, commande_id)
     if not commande:
         raise HTTPException(
@@ -1161,21 +1195,8 @@ async def update_ligne(
             detail="Order not in preparation or verification",
         )
 
-    from app.models.commande import LigneCommande
-
     result = await db.execute(
-        select(LigneCommande)
-        .options(
-            load_only(
-                LigneCommande.id,
-                LigneCommande.commande_id,
-                LigneCommande.qte_demandee,
-                LigneCommande.qte_prelevee,
-                LigneCommande.verifie,
-                LigneCommande.dlc,
-            )
-        )
-        .where(
+        select(LigneCommande).where(
             LigneCommande.id == ligne_id,
             LigneCommande.commande_id == commande_id,
         )
@@ -1196,52 +1217,82 @@ async def update_ligne(
     db.info["actor_id"] = str(current_user.id)
     if body.qte_prelevee is not None:
         ligne.qte_prelevee = body.qte_prelevee
+    if body.n_lot is not None:
+        ligne.n_lot = body.n_lot
+    if body.fab is not None:
+        ligne.fab = body.fab
+    if body.exp is not None:
+        ligne.exp = body.exp
+    if body.ppa is not None:
+        ligne.ppa = body.ppa
     if body.verifie is not None:
         ligne.verifie = body.verifie
-    if body.dlc is not None:
-        ligne.dlc = body.dlc
     await db.commit()
     return {"status": "ok"}
 
 
-# ─── Vignette endpoints (OCR DLC extraction) ────────────────────────────────
+# ─── Per-ligne vignette OCR scan ────────────────────────────────────────────
 
 from pathlib import Path as _Path  # noqa: E402
 
+from app.commandes.schemas import VignetteWarning  # noqa: E402
+
 _VIGNETTES_ROOT = _Path(__file__).resolve().parents[3] / "storage" / "images" / "vignettes"
 _MAX_VIGNETTE_BYTES = 10 * 1024 * 1024  # 10 MiB
-_ALLOWED_VIGNETTE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+_CONTENT_TYPE_TO_EXT = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
+_PER_LIGNE_ROLES = ("preparateur", "controleur", "operatrice", "admin")
 
 
-def _vignette_role_ok(role: str) -> bool:
-    return role in ("preparateur", "operatrice", "admin")
-
-
-def _vignette_status_ok(statut: OrderStatus) -> bool:
-    return statut in (OrderStatus.EN_PREPARATION, OrderStatus.PRELEVEE_PARTIELLEMENT)
-
-
-def _vignette_to_dict(v, designation: str | None = None) -> dict:
+def _vignette_to_dict(v) -> dict | None:
+    if v is None:
+        return None
     return {
         "id": str(v.id),
-        "commande_id": str(v.commande_id),
-        "ligne_id": str(v.ligne_id) if v.ligne_id else None,
-        "ligne_designation": designation,
-        "path": f"images/vignettes/{v.commande_id}/{v.filename}",
-        "extracted_dlc": v.extracted_dlc.isoformat() if v.extracted_dlc else None,
-        "extracted_code_article": v.extracted_code_article,
-        "uploaded_at": v.created_at.isoformat() if v.created_at else None,
+        "filename": v.filename,
+        "file_url": f"/static/images/vignettes/{v.filename}",
+        "extracted_lot": v.extracted_lot,
+        "extracted_fab": v.extracted_fab.isoformat() if v.extracted_fab else None,
+        "extracted_exp": v.extracted_exp.isoformat() if v.extracted_exp else None,
+        "extracted_ppa": str(v.extracted_ppa) if v.extracted_ppa is not None else None,
+        "extracted_designation": v.extracted_designation,
     }
 
 
-@router.post("/{commande_id}/vignettes")
-async def upload_vignette(
+def _compute_warnings(extraction, ligne, medicament_ppa) -> list[VignetteWarning]:
+    warnings: list[VignetteWarning] = []
+    if extraction.lot is None and not ligne.n_lot:
+        warnings.append(VignetteWarning.MISSING_LOT)
+    if extraction.fab is None and ligne.fab is None:
+        warnings.append(VignetteWarning.MISSING_FAB)
+    if extraction.exp is None and ligne.exp is None:
+        warnings.append(VignetteWarning.MISSING_EXP)
+    if extraction.ppa is None and ligne.ppa is None:
+        warnings.append(VignetteWarning.MISSING_PPA)
+    elif (
+        extraction.ppa is not None
+        and medicament_ppa is not None
+        and extraction.ppa != medicament_ppa
+    ):
+        warnings.append(VignetteWarning.PPA_DIVERGENT)
+    return warnings
+
+
+@router.post("/{commande_id}/lignes/{ligne_id}/vignette")
+async def upload_ligne_vignette(
     commande_id: UUID,
+    ligne_id: UUID,
     current_user: CurrentUser,
     file: Annotated[UploadFile, File(...)],
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> dict:
-    """Upload a single vignette photo, extract DLC, suggest a matching line."""
+    """Upload a photo of a vignette pasted on a medication box; OCR pre-fills
+    the line's lot/fab/exp/ppa, auto-checks `verifie` if no warnings.
+    """
     from app.models.vignette import Vignette
     from app.ocr.service import (
         OcrConfigurationError,
@@ -1249,239 +1300,180 @@ async def upload_vignette(
         extract_vignette_fields,
     )
 
-    if not _vignette_role_ok(current_user.role.value):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Preparateur/operatrice/admin only",
-        )
+    if current_user.role.value not in _PER_LIGNE_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied")
 
-    commande = await get_order_with_lines(db, commande_id)
-    if not commande:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    if not _vignette_status_ok(commande.statut):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Vignette upload not allowed from status {commande.statut.value}",
+    ligne_result = await db.execute(
+        select(LigneCommande).where(
+            LigneCommande.id == ligne_id,
+            LigneCommande.commande_id == commande_id,
         )
+    )
+    ligne = ligne_result.scalar_one_or_none()
+    if ligne is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Line not found")
+
+    commande_result = await db.execute(select(Commande).where(Commande.id == commande_id))
+    commande = commande_result.scalar_one_or_none()
+    if commande is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Order not found")
+    if commande.statut in (OrderStatus.LIVREE, OrderStatus.ANNULEE):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Order is finalized")
 
     image_bytes = await file.read()
     if not image_bytes:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty file")
     if len(image_bytes) > _MAX_VIGNETTE_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Image exceeds 10 MiB limit",
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            "Image exceeds 10 MiB limit",
         )
-    content_type = file.content_type or "image/jpeg"
-    if not content_type.startswith("image/"):
+    content_type = (file.content_type or "").lower()
+    ext = _CONTENT_TYPE_TO_EXT.get(content_type)
+    if not ext:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported content type: {content_type}",
-        )
-    ext = _Path(file.filename or "img.jpg").suffix.lower()
-    if ext not in _ALLOWED_VIGNETTE_EXT:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Allowed: jpg, png, webp",
-        )
-    if not (
-        image_bytes[:8] == b"\x89PNG\r\n\x1a\n"
-        or image_bytes[:2] == b"\xff\xd8"
-        or image_bytes[:4] == b"RIFF"
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File content does not match a valid image format",
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            "Unsupported format (JPG/PNG/WEBP only)",
         )
 
     try:
         extraction = await extract_vignette_fields(image_bytes, content_type)
     except OcrConfigurationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
-        ) from exc
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc)) from exc
     except OcrUpstreamError as exc:
-        logger.warning("OCR upstream failure on commande=%s: %s", commande_id, exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"OCR service error: {exc}"
-        ) from exc
+        logger.warning("OCR upstream failure on ligne=%s: %s", ligne_id, exc)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"OCR error: {exc}") from exc
 
-    suggested_ligne_id: UUID | None = None
-    if extraction.code_article:
-        med_result = await db.execute(
-            select(Medicament.id, Medicament.code_article).where(
-                Medicament.id.in_([ln.medicament_id for ln in commande.lignes])
-            )
-        )
-        code_by_med: dict[UUID, str] = {row.id: row.code_article for row in med_result}
-        target = extraction.code_article.strip().lower()
-        for ln in commande.lignes:
-            code = code_by_med.get(ln.medicament_id, "")
-            if code and code.strip().lower() == target:
-                suggested_ligne_id = ln.id
-                break
+    # Upsert vignette (1:1 with ligne). Same UUID re-used on re-scan.
+    existing_result = await db.execute(select(Vignette).where(Vignette.ligne_id == ligne_id))
+    existing = existing_result.scalar_one_or_none()
+    vid = existing.id if existing else uuid4()
 
-    commande_dir = _VIGNETTES_ROOT / str(commande_id)
-    commande_dir.mkdir(parents=True, exist_ok=True)
-    vignette_id = uuid4()
-    filename = f"{vignette_id}{ext}"
-    filepath = commande_dir / filename
-    if not filepath.resolve().is_relative_to(_VIGNETTES_ROOT.resolve()):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path")
-    with open(filepath, "wb") as f:
-        f.write(image_bytes)
+    _VIGNETTES_ROOT.mkdir(parents=True, exist_ok=True)
+    filename = f"{vid}.{ext}"
+    target_path = (_VIGNETTES_ROOT / filename).resolve()
+    if not target_path.is_relative_to(_VIGNETTES_ROOT.resolve()):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid path")
+
+    if existing:
+        old_path = (_VIGNETTES_ROOT / existing.filename).resolve()
+        if (
+            old_path.is_relative_to(_VIGNETTES_ROOT.resolve())
+            and old_path.is_file()
+            and old_path != target_path
+        ):
+            try:
+                old_path.unlink()
+            except OSError as exc:
+                logger.warning("Failed to remove old vignette file %s: %s", old_path, exc)
+
+    target_path.write_bytes(image_bytes)
 
     db.info["actor_id"] = str(current_user.id)
-    vignette = Vignette(
-        id=vignette_id,
-        commande_id=commande_id,
-        ligne_id=suggested_ligne_id,
-        filename=filename,
-        extracted_dlc=extraction.dlc,
-        extracted_code_article=extraction.code_article,
-        extracted_raw=extraction.raw,
-        uploaded_by=current_user.id,
+    if existing:
+        existing.filename = filename
+        existing.extracted_lot = extraction.lot
+        existing.extracted_fab = extraction.fab
+        existing.extracted_exp = extraction.exp
+        existing.extracted_ppa = extraction.ppa
+        existing.extracted_designation = extraction.designation
+        existing.extracted_raw = extraction.raw
+        existing.uploaded_by = current_user.id
+        vignette = existing
+    else:
+        vignette = Vignette(
+            id=vid,
+            commande_id=commande_id,
+            ligne_id=ligne_id,
+            filename=filename,
+            extracted_lot=extraction.lot,
+            extracted_fab=extraction.fab,
+            extracted_exp=extraction.exp,
+            extracted_ppa=extraction.ppa,
+            extracted_designation=extraction.designation,
+            extracted_raw=extraction.raw,
+            uploaded_by=current_user.id,
+        )
+        db.add(vignette)
+
+    # Apply OCR values to the line (only overwrite when OCR returned a value)
+    if extraction.lot:
+        ligne.n_lot = extraction.lot
+    if extraction.fab is not None:
+        ligne.fab = extraction.fab
+    if extraction.exp is not None:
+        ligne.exp = extraction.exp
+    if extraction.ppa is not None:
+        ligne.ppa = extraction.ppa
+
+    # Catalogue PPA for divergence check
+    med_result = await db.execute(
+        select(Medicament.ppa).where(Medicament.id == ligne.medicament_id)
     )
-    db.add(vignette)
+    medicament_ppa = med_result.scalar_one_or_none()
+
+    warnings = _compute_warnings(extraction, ligne, medicament_ppa)
+    ligne.verifie = len(warnings) == 0
+
     await db.commit()
+    await db.refresh(ligne)
     await db.refresh(vignette)
 
-    designation = None
-    if suggested_ligne_id:
-        for ln in commande.lignes:
-            if ln.id == suggested_ligne_id:
-                designation = ln.designation
-                break
-
-    result = _vignette_to_dict(vignette, designation)
-    result["suggested_ligne_id"] = str(suggested_ligne_id) if suggested_ligne_id else None
-    return result
-
-
-@router.get("/{commande_id}/vignettes")
-async def list_vignettes(
-    commande_id: UUID,
-    current_user: CurrentUser,
-    db: Annotated[AsyncSession, Depends(get_db)] = None,
-) -> dict:
-    from app.models.vignette import Vignette
-
-    if current_user.role.value not in ("preparateur", "controleur", "operatrice", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-    commande = await get_order_with_lines(db, commande_id)
-    if not commande:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-
-    result = await db.execute(
-        select(Vignette)
-        .where(Vignette.commande_id == commande_id)
-        .order_by(Vignette.created_at.desc())
-    )
-    vignettes = result.scalars().all()
-    designation_by_lid = {ln.id: ln.designation for ln in commande.lignes}
+    ligne_dict = _ligne_to_dict(ligne, vignette)
+    ligne_dict["medicament_ppa"] = str(medicament_ppa) if medicament_ppa is not None else None
     return {
-        "vignettes": [
-            _vignette_to_dict(v, designation_by_lid.get(v.ligne_id) if v.ligne_id else None)
-            for v in vignettes
-        ]
+        "ligne": ligne_dict,
+        "vignette": _vignette_to_dict(vignette),
+        "warnings": [w.value for w in warnings],
     }
 
 
-class UpdateVignetteRequest(BaseModel):
-    ligne_id: UUID | None = None
-    dlc: date | None = None
-
-
-@router.patch("/{commande_id}/vignettes/{vignette_id}")
-async def assign_vignette(
+@router.delete(
+    "/{commande_id}/lignes/{ligne_id}/vignette",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def clear_ligne_vignette(
     commande_id: UUID,
-    vignette_id: UUID,
-    body: UpdateVignetteRequest,
+    ligne_id: UUID,
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
-) -> dict:
-    """Assign a vignette to a ligne and copy its DLC to the ligne."""
+) -> None:
+    """Remove the vignette and reset the line's lot/fab/exp/ppa + verifie."""
     from app.models.vignette import Vignette
 
-    if not _vignette_role_ok(current_user.role.value):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if current_user.role.value not in _PER_LIGNE_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied")
 
-    commande = await get_order_with_lines(db, commande_id)
-    if not commande:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    if not _vignette_status_ok(commande.statut) and commande.statut != OrderStatus.EN_VERIFICATION:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot edit vignette from status {commande.statut.value}",
+    ligne_result = await db.execute(
+        select(LigneCommande).where(
+            LigneCommande.id == ligne_id,
+            LigneCommande.commande_id == commande_id,
         )
-
-    result = await db.execute(
-        select(Vignette).where(Vignette.id == vignette_id, Vignette.commande_id == commande_id)
     )
-    vignette = result.scalar_one_or_none()
-    if not vignette:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vignette not found")
+    ligne = ligne_result.scalar_one_or_none()
+    if ligne is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Line not found")
 
-    target_ligne = None
-    if body.ligne_id is not None:
-        for ln in commande.lignes:
-            if ln.id == body.ligne_id:
-                target_ligne = ln
-                break
-        if target_ligne is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="ligne_id does not belong to this commande",
-            )
+    v_result = await db.execute(select(Vignette).where(Vignette.ligne_id == ligne_id))
+    vignette = v_result.scalar_one_or_none()
+    if vignette is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Vignette not found")
 
-    db.info["actor_id"] = str(current_user.id)
-    if body.dlc is not None:
-        vignette.extracted_dlc = body.dlc
-    vignette.ligne_id = body.ligne_id
-
-    if target_ligne is not None:
-        dlc_to_apply = body.dlc if body.dlc is not None else vignette.extracted_dlc
-        if dlc_to_apply is not None:
-            target_ligne.dlc = dlc_to_apply
-
-    await db.commit()
-    await db.refresh(vignette)
-    designation = target_ligne.designation if target_ligne else None
-    return _vignette_to_dict(vignette, designation)
-
-
-@router.delete("/{commande_id}/vignettes/{vignette_id}")
-async def delete_vignette(
-    commande_id: UUID,
-    vignette_id: UUID,
-    current_user: CurrentUser,
-    db: Annotated[AsyncSession, Depends(get_db)] = None,
-) -> dict:
-    from app.models.vignette import Vignette
-
-    if not _vignette_role_ok(current_user.role.value):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-    result = await db.execute(
-        select(Vignette).where(Vignette.id == vignette_id, Vignette.commande_id == commande_id)
-    )
-    vignette = result.scalar_one_or_none()
-    if not vignette:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vignette not found")
-
-    filepath = _VIGNETTES_ROOT / str(commande_id) / vignette.filename
-    try:
-        resolved = filepath.resolve()
-        if resolved.is_relative_to(_VIGNETTES_ROOT.resolve()) and resolved.is_file():
-            resolved.unlink()
-    except OSError as exc:
-        logger.warning("Failed to delete vignette file %s: %s", filepath, exc)
+    target_path = (_VIGNETTES_ROOT / vignette.filename).resolve()
+    if target_path.is_relative_to(_VIGNETTES_ROOT.resolve()) and target_path.is_file():
+        try:
+            target_path.unlink()
+        except OSError as exc:
+            logger.warning("Failed to remove vignette file %s: %s", target_path, exc)
 
     db.info["actor_id"] = str(current_user.id)
     await db.delete(vignette)
+    ligne.n_lot = None
+    ligne.fab = None
+    ligne.exp = None
+    ligne.ppa = None
+    ligne.verifie = False
     await db.commit()
-    return {"status": "ok"}
 
 
 @router.patch("/{commande_id}/finalize-preparation")

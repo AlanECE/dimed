@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from app.ocr.service import _parse_dlc
+from app.ocr.service import _parse_date
 
 
 @pytest.mark.parametrize(
@@ -23,8 +23,8 @@ from app.ocr.service import _parse_dlc
         ("2027-5-1", date(2027, 5, 1)),
     ],
 )
-def test_parse_dlc_valid(raw: str, expected: date) -> None:
-    assert _parse_dlc(raw) == expected
+def test_parse_date_valid(raw: str, expected: date) -> None:
+    assert _parse_date(raw) == expected
 
 
 @pytest.mark.parametrize(
@@ -39,10 +39,10 @@ def test_parse_dlc_valid(raw: str, expected: date) -> None:
         "2027-13-01",
     ],
 )
-def test_parse_dlc_invalid(raw) -> None:
-    assert _parse_dlc(raw) is None
+def test_parse_date_invalid(raw) -> None:
+    assert _parse_date(raw) is None
 
 
-def test_parse_dlc_passthrough_date() -> None:
+def test_parse_date_passthrough_date() -> None:
     d = date(2030, 1, 15)
-    assert _parse_dlc(d) == d
+    assert _parse_date(d) == d
