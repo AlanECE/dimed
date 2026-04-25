@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import barcode
+import qrcode
 from barcode.writer import ImageWriter
 from num2words import num2words
 from reportlab.graphics.shapes import Circle, Drawing, String
@@ -35,6 +36,19 @@ BORDER_GREY = colors.HexColor("#b0bec5")
 
 def _ensure_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _make_qr_image(data: str, size_cm: float) -> Image:
+    """Generate a QR code image for the given data string."""
+    qr = qrcode.QRCode(version=1, box_size=6, border=2)
+    qr.add_data(data)
+    qr.make(fit=True)
+    pil_img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    pil_img.save(buf, format="PNG")
+    buf.seek(0)
+    size = size_cm * cm
+    return Image(buf, width=size, height=size)
 
 
 def _dimed_header() -> list:
@@ -579,14 +593,16 @@ def generate_facture_pdf(
         words_style,
     )
 
+    qr_facture = _make_qr_image(commande_ref, 2.8)
     bottom_row = Table(
-        [[_cachet_drawing(), words_p]],
-        colWidths=[3.2 * cm, 15.8 * cm],
+        [[_cachet_drawing(), words_p, qr_facture]],
+        colWidths=[3.2 * cm, 12.6 * cm, 3.2 * cm],
     )
     bottom_row.setStyle(
         TableStyle(
             [
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (2, 0), (2, 0), "RIGHT"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                 ("TOPPADDING", (0, 0), (-1, -1), 4),
@@ -1062,14 +1078,18 @@ def generate_liste_prelevement_pdf(
     bar_buf.seek(0)
     barcode_img = Image(bar_buf, width=7.5 * cm, height=1.7 * cm)
 
+    qr_img = _make_qr_image(commande_ref, 3.2)
+
     cmd_cell = [
         Paragraph(f"CMD N° : <b>{commande_ref}</b>", cmd_title_style),
         Spacer(1, 1 * mm),
         barcode_img,
     ]
 
+    right_cell = [_cachet_drawing(), Spacer(1, 2 * mm), qr_img]
+
     cmd_block = Table(
-        [[cmd_cell, _cachet_drawing()]],
+        [[cmd_cell, right_cell]],
         colWidths=[15.5 * cm, 3.5 * cm],
     )
     cmd_block.setStyle(
