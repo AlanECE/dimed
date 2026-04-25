@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.arrivages.dlc import format_dlc, resolve_dlc
 from app.documents.pdf_generator import generate_bl_pdf, generate_facture_pdf
-from app.models.arrivage import Arrivage
 from app.models.commande import Commande, LigneCommande, OrderStatus
 from app.models.document import BonDeLivraison, Facture, FeuilleDeRoute
 from app.models.medicament import Medicament
@@ -50,35 +50,7 @@ async def _load_commande_pdf_context(
             row.id: {"code": row.code_article, "ppa": float(row.ppa)} for row in med_result
         }
 
-    # Resolve DLC (date_peremption) per (medicament_id, n_lot) from arrivages.
-    # Falls back to the latest arrivage of the same medicament if no exact lot match.
-    dlc_by_key: dict[tuple, date | None] = {}
-    latest_dlc_by_med: dict = {}
-    if medicament_ids:
-        arr_result = await db.execute(
-            select(
-                Arrivage.medicament_id,
-                Arrivage.n_lot,
-                Arrivage.date_peremption,
-                Arrivage.date_arrivage,
-            ).where(Arrivage.medicament_id.in_(medicament_ids))
-        )
-        for row in arr_result:
-            if row.n_lot:
-                dlc_by_key[(row.medicament_id, row.n_lot)] = row.date_peremption
-            existing = latest_dlc_by_med.get(row.medicament_id)
-            if existing is None or row.date_arrivage > existing[0]:
-                latest_dlc_by_med[row.medicament_id] = (row.date_arrivage, row.date_peremption)
-
-    def _format_dlc(ligne: LigneCommande) -> str:
-        if ligne.n_lot:
-            dlc = dlc_by_key.get((ligne.medicament_id, ligne.n_lot))
-            if dlc:
-                return dlc.strftime("%m/%Y")
-        fallback = latest_dlc_by_med.get(ligne.medicament_id)
-        if fallback and fallback[1]:
-            return fallback[1].strftime("%m/%Y")
-        return ""
+    dlc_by_key, latest_dlc_by_med = await resolve_dlc(db, medicament_ids)
 
     lignes_data = []
     for ligne in commande_lines:
@@ -87,7 +59,7 @@ async def _load_commande_pdf_context(
         brut = float(ligne.prix_unitaire) * float(qte)
         net = brut * (1 - remise_pct / 100)
         med_info = med_by_id.get(ligne.medicament_id, {})
-        dlc_str = _format_dlc(ligne)
+        dlc_str = format_dlc(dlc_by_key, latest_dlc_by_med, ligne.medicament_id, ligne.n_lot)
         lignes_data.append(
             {
                 "code": med_info.get("code", ""),

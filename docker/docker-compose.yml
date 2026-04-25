@@ -41,7 +41,7 @@ services:
     volumes:
       - ../apps/api:/app
       - ../apps/storage:/storage
-      - ../packages/ocr:/packages/ocr
+
     environment:
       DIMED_ENVIRONMENT: ${DIMED_ENVIRONMENT:-development}
       DIMED_DATABASE_URL: ${DIMED_DATABASE_URL:-postgresql+asyncpg://dimed:dimed@db:5432/dimed}

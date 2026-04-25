@@ -1,7 +1,7 @@
 "use client";
 
 import { API_BASE, fetchApi } from "@/lib/api";
-import type { PreparationDetailResponse } from "@/lib/types";
+import type { PreparationDetailResponse, VignetteResponse } from "@/lib/types";
 import { useCallback, useState } from "react";
 
 export function usePreparation() {
@@ -26,12 +26,12 @@ export function usePreparation() {
 			ligneId: string,
 			qtePrelevee: number | null,
 			verifie: boolean | null,
-			ocrVerifie?: boolean,
+			dlc?: string | null,
 		) => {
 			const body: Record<string, unknown> = {};
 			if (qtePrelevee !== null) body.qte_prelevee = qtePrelevee;
 			if (verifie !== null) body.verifie = verifie;
-			if (ocrVerifie !== undefined) body.ocr_verifie = ocrVerifie;
+			if (dlc !== undefined) body.dlc = dlc;
 			await fetchApi(`/commandes/${commandeId}/update-ligne/${ligneId}`, {
 				method: "PATCH",
 				body: JSON.stringify(body),
@@ -59,23 +59,50 @@ export function usePreparation() {
 		});
 	}, []);
 
-	const scanPrelevement = useCallback(
-		async (
-			commandeId: string,
-			file: File,
-		): Promise<{ matched_count: number; total_lines: number; matched_ligne_ids: string[] }> => {
+	const fetchVignettes = useCallback(async (commandeId: string): Promise<VignetteResponse[]> => {
+		const res = await fetchApi<{ vignettes: VignetteResponse[] }>(
+			`/commandes/${commandeId}/vignettes`,
+		);
+		return res.vignettes;
+	}, []);
+
+	const uploadVignette = useCallback(
+		async (commandeId: string, file: File): Promise<VignetteResponse> => {
 			const form = new FormData();
 			form.append("file", file);
-			const res = await fetch(`${API_BASE}/commandes/${commandeId}/ocr-scan`, {
+			const res = await fetch(`${API_BASE}/commandes/${commandeId}/vignettes`, {
 				method: "POST",
 				body: form,
 				credentials: "include",
 			});
 			if (!res.ok) {
-				const body = await res.json().catch(() => ({ detail: "Erreur OCR" }));
-				throw new Error(body.detail ?? `OCR ${res.status}`);
+				const body = await res.json().catch(() => ({ detail: "Erreur upload" }));
+				throw new Error(body.detail ?? `Vignette ${res.status}`);
 			}
 			return res.json();
+		},
+		[],
+	);
+
+	const assignVignette = useCallback(
+		async (
+			commandeId: string,
+			vignetteId: string,
+			payload: { ligne_id: string | null; dlc?: string | null },
+		): Promise<VignetteResponse> => {
+			return fetchApi<VignetteResponse>(`/commandes/${commandeId}/vignettes/${vignetteId}`, {
+				method: "PATCH",
+				body: JSON.stringify(payload),
+			});
+		},
+		[],
+	);
+
+	const deleteVignette = useCallback(
+		async (commandeId: string, vignetteId: string): Promise<void> => {
+			await fetchApi(`/commandes/${commandeId}/vignettes/${vignetteId}`, {
+				method: "DELETE",
+			});
 		},
 		[],
 	);
@@ -103,6 +130,9 @@ export function usePreparation() {
 		finalizePreparation,
 		validateControl,
 		downloadListePrelevement,
-		scanPrelevement,
+		fetchVignettes,
+		uploadVignette,
+		assignVignette,
+		deleteVignette,
 	};
 }

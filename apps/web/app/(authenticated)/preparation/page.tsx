@@ -14,6 +14,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { VignetteGalleryDialog } from "@/components/vignette-gallery-dialog";
 import { useOrders } from "@/hooks/use-orders";
 import { usePreparation } from "@/hooks/use-preparation";
 import type { CaddiePoolResponse, LignePreparationResponse, OrderResponse } from "@/lib/types";
@@ -22,13 +23,13 @@ import {
 	CheckCircle2,
 	ClipboardList,
 	FileDown,
+	Images,
 	Loader2,
 	Package,
 	Play,
-	ScanLine,
 	ShoppingCart,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function PreparationPage() {
@@ -258,12 +259,14 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		updateLigne,
 		finalizePreparation,
 		downloadListePrelevement,
-		scanPrelevement,
+		fetchVignettes,
+		uploadVignette,
+		assignVignette,
+		deleteVignette,
 	} = usePreparation();
 	const [localLignes, setLocalLignes] = useState<LignePreparationResponse[]>([]);
 	const [saving, setSaving] = useState(false);
-	const [scanning, setScanning] = useState(false);
-	const fileInputRef = useRef<HTMLInputElement>(null);
+	const [galleryOpen, setGalleryOpen] = useState(false);
 
 	useEffect(() => {
 		fetchLignes(order.id);
@@ -299,24 +302,6 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		[order.id, updateLigne],
 	);
 
-	const handleOcrToggle = useCallback(
-		async (ligne: LignePreparationResponse) => {
-			const newOcr = !ligne.ocr_verifie;
-			setLocalLignes((prev) =>
-				prev.map((l) => (l.id === ligne.id ? { ...l, ocr_verifie: newOcr } : l)),
-			);
-			try {
-				await updateLigne(order.id, ligne.id, null, null, newOcr);
-			} catch {
-				toast.error("Erreur mise à jour OCR");
-				setLocalLignes((prev) =>
-					prev.map((l) => (l.id === ligne.id ? { ...l, ocr_verifie: !newOcr } : l)),
-				);
-			}
-		},
-		[order.id, updateLigne],
-	);
-
 	const handleQteChange = useCallback((ligne: LignePreparationResponse, qte: number) => {
 		setLocalLignes((prev) =>
 			prev.map((l) => (l.id === ligne.id ? { ...l, qte_prelevee: qte } : l)),
@@ -336,31 +321,15 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		[order.id, localLignes, updateLigne],
 	);
 
-	const handleScanFile = useCallback(
-		async (file: File) => {
-			setScanning(true);
-			try {
-				const res = await scanPrelevement(order.id, file);
-				if (res.matched_count === 0) {
-					toast.warning("Aucune ligne reconnue sur le scan");
-				} else {
-					toast.success(`${res.matched_count}/${res.total_lines} lignes cochées via OCR`);
-					await fetchLignes(order.id);
-				}
-			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Erreur OCR");
-			} finally {
-				setScanning(false);
-			}
-		},
-		[order.id, scanPrelevement, fetchLignes],
-	);
-
 	const allVerified = localLignes.length > 0 && localLignes.every((l) => l.verifie);
+	const missingDlc = localLignes.filter((l) => !l.dlc).length;
 
 	const handleFinalize = useCallback(async () => {
 		setSaving(true);
 		try {
+			if (missingDlc > 0) {
+				toast.warning(`Attention : ${missingDlc} ligne${missingDlc > 1 ? "s" : ""} sans DLC`);
+			}
 			await finalizePreparation(order.id);
 			toast.success("Préparation envoyée au contrôleur");
 			onBack();
@@ -369,7 +338,7 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		} finally {
 			setSaving(false);
 		}
-	}, [order.id, finalizePreparation, onBack]);
+	}, [order.id, finalizePreparation, onBack, missingDlc]);
 
 	if (loading) {
 		return (
@@ -397,28 +366,12 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 				<Button
 					variant="outline"
 					size="sm"
-					onClick={() => fileInputRef.current?.click()}
-					disabled={scanning}
+					onClick={() => setGalleryOpen(true)}
 					className="gap-1.5 text-[12px]"
 				>
-					{scanning ? (
-						<Loader2 className="h-3.5 w-3.5 animate-spin" />
-					) : (
-						<ScanLine className="h-3.5 w-3.5" />
-					)}
-					Scanner OCR
+					<Images className="h-3.5 w-3.5" />
+					Vignettes
 				</Button>
-				<input
-					ref={fileInputRef}
-					type="file"
-					accept="image/*"
-					className="hidden"
-					onChange={(e) => {
-						const f = e.target.files?.[0];
-						if (f) handleScanFile(f);
-						e.target.value = "";
-					}}
-				/>
 				<Button
 					variant="outline"
 					size="sm"
@@ -429,6 +382,18 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 					Liste PDF
 				</Button>
 			</div>
+
+			<VignetteGalleryDialog
+				open={galleryOpen}
+				onOpenChange={setGalleryOpen}
+				commandeId={order.id}
+				lignes={localLignes}
+				fetchVignettes={fetchVignettes}
+				uploadVignette={uploadVignette}
+				assignVignette={assignVignette}
+				deleteVignette={deleteVignette}
+				onChange={() => fetchLignes(order.id)}
+			/>
 
 			{/* Caddie affecte */}
 			{order.caddie_pool && (
@@ -451,14 +416,14 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 							<TableHead className="w-12 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Vérifié
 							</TableHead>
-							<TableHead className="w-12 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-								OCR
-							</TableHead>
 							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Désignation
 							</TableHead>
 							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Lot
+							</TableHead>
+							<TableHead className="text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								DLC
 							</TableHead>
 							<TableHead className="text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Qté dem.
@@ -474,14 +439,15 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 					<TableBody>
 						{localLignes.map((ligne) => {
 							const isPartial = (ligne.qte_prelevee ?? 0) < ligne.qte_demandee;
-							const fullyValidated = ligne.verifie && ligne.ocr_verifie;
+							const hasDlc = Boolean(ligne.dlc);
+							const fullyValidated = ligne.verifie && hasDlc;
 							return (
 								<TableRow
 									key={ligne.id}
 									className={`border-border/30 transition-colors hover:bg-muted/40 ${
 										fullyValidated
 											? "bg-emerald-100/60"
-											: ligne.verifie || ligne.ocr_verifie
+											: ligne.verifie || hasDlc
 												? "bg-emerald-50/30"
 												: ""
 									}`}
@@ -493,16 +459,16 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 											aria-label="Verifie"
 										/>
 									</TableCell>
-									<TableCell className="text-center">
-										<Checkbox
-											checked={ligne.ocr_verifie}
-											onCheckedChange={() => handleOcrToggle(ligne)}
-											aria-label="OCR"
-										/>
-									</TableCell>
 									<TableCell className="text-[13px] font-medium">{ligne.designation}</TableCell>
 									<TableCell className="font-mono text-[12px] text-muted-foreground">
 										{ligne.n_lot || "—"}
+									</TableCell>
+									<TableCell className="text-center font-mono text-[12px]">
+										{ligne.dlc ? (
+											new Date(ligne.dlc).toLocaleDateString("fr-FR")
+										) : (
+											<span className="text-muted-foreground">—</span>
+										)}
 									</TableCell>
 									<TableCell className="text-center text-[13px] tabular-nums">
 										{ligne.qte_demandee}

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -25,8 +25,8 @@ class LigneResponse(BaseModel):
     qte_demandee: int
     prix_unitaire: float
     remise_pct: float = 0.0
-    ocr_verifie: bool = False
     n_lot: str | None
+    dlc: date | None = None
 
     model_config = {"from_attributes": True}
 

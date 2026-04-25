@@ -72,8 +72,8 @@ export type LigneResponse = {
 	qte_demandee: number;
 	prix_unitaire: number;
 	remise_pct: number;
-	ocr_verifie: boolean;
 	n_lot: string | null;
+	dlc: string | null;
 };
 
 export type UpdateRemisesRequest = {
@@ -259,8 +259,20 @@ export type LignePreparationResponse = {
 	qte_prelevee: number | null;
 	prix_unitaire: number;
 	n_lot: string | null;
+	dlc: string | null;
 	verifie: boolean;
-	ocr_verifie: boolean;
+};
+
+export type VignetteResponse = {
+	id: string;
+	commande_id: string;
+	ligne_id: string | null;
+	ligne_designation: string | null;
+	path: string;
+	extracted_dlc: string | null;
+	extracted_code_article: string | null;
+	uploaded_at: string | null;
+	suggested_ligne_id?: string | null;
 };
 
 export type PreparationDetailResponse = {

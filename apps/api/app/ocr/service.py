@@ -1,20 +1,22 @@
-"""OCR service — calls a free vision LLM via OpenRouter to parse a picking sheet scan.
+"""OCR service — extract pharmaceutical vignette fields via OpenRouter vision LLM.
 
-We send the scanned image along with the list of expected `code_article` and
-`designation` values for the commande, and ask the model to return a strict JSON
-array of lines it could read. Each detected entry references a `code_article`
-and a `qte_prelevee` integer. The caller matches those back to `LigneCommande`
-rows and flips `ocr_verifie` on the matches.
+We send a single photo of a medication vignette (étiquette pharma) and ask the
+model to return a strict JSON with at least the DLC (date de péremption). We
+also request the code_article / designation as auxiliary fields to help the
+caller suggest a matching line in the commande.
 
-The model is intentionally given the allowed code list so it can snap its reads
-to valid values even if the scan is low-quality, and so the prompt stays small.
+Dates on pharma vignettes come in many formats ("05/2027", "31-05-2027",
+"May 2027", "2027-05-31"...). We normalize everything to a Python `date`,
+falling back to the last day of the month when only month+year are present.
 """
 
 import base64
+import calendar
 import json
 import logging
 import re
 from dataclasses import dataclass
+from datetime import date, datetime
 
 import httpx
 
@@ -24,18 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class OcrLineHint:
-    ligne_id: str
-    code_article: str
-    designation: str
-    qte_demandee: int
-
-
-@dataclass
-class OcrMatch:
-    ligne_id: str
-    code_article: str
-    qte_prelevee: int | None
+class VignetteExtraction:
+    dlc: date | None
+    code_article: str | None
+    designation: str | None
+    raw: str
 
 
 class OcrConfigurationError(RuntimeError):
@@ -47,29 +42,23 @@ class OcrUpstreamError(RuntimeError):
 
 
 _SYSTEM_PROMPT = (
-    "Tu es un assistant OCR spécialisé dans les bons de prélèvement pharmaceutiques "
-    "scannés à la main par un préparateur. Ta seule tâche : identifier les lignes "
-    "cochées ou validées sur l'image et renvoyer un JSON strict."
+    "Tu es un assistant OCR spécialisé dans les vignettes pharmaceutiques "
+    "(étiquettes collées sur les boîtes de médicaments). Ta seule tâche : "
+    "lire la photo et renvoyer un JSON strict avec la date de péremption (DLC), "
+    "le code article si visible, et la désignation du produit."
 )
 
-
-def _build_user_prompt(hints: list[OcrLineHint]) -> str:
-    lines = "\n".join(
-        f"- code={h.code_article}  qte_demandee={h.qte_demandee}  designation={h.designation[:60]}"
-        for h in hints
-    )
-    return (
-        "Voici la liste des articles attendus pour cette commande "
-        "(utilise uniquement ces `code` dans ta réponse) :\n"
-        f"{lines}\n\n"
-        "Analyse l'image du bon de prélèvement. Pour chaque ligne que tu lis "
-        "avec une coche, un visa manuscrit, ou une quantité notée, renvoie un "
-        'objet `{"code_article": str, "qte_prelevee": int|null}`. '
-        "Si une ligne n'est ni cochée ni annotée, ne la renvoie pas.\n\n"
-        "Réponds UNIQUEMENT avec un JSON valide de la forme :\n"
-        '{"matches": [{"code_article": "...", "qte_prelevee": 12}, ...]}\n'
-        "Aucun texte avant ou après. Aucun bloc Markdown."
-    )
+_USER_PROMPT = (
+    "Analyse cette photo de vignette pharmaceutique. Extrais :\n"
+    "- `dlc` : la date de péremption au format ISO `YYYY-MM-DD`. Si seul le "
+    "mois et l'année sont visibles (ex: 05/2027), utilise le dernier jour du "
+    "mois (2027-05-31). Si absente, renvoie `null`.\n"
+    "- `code_article` : code article / CIP / référence visible (chaîne), ou `null`.\n"
+    "- `designation` : nom commercial ou DCI du produit, ou `null`.\n\n"
+    "Réponds UNIQUEMENT avec un JSON valide de la forme :\n"
+    '{"dlc": "YYYY-MM-DD"|null, "code_article": "..."|null, "designation": "..."|null}\n'
+    "Aucun texte avant ou après. Aucun bloc Markdown."
+)
 
 
 def _extract_json(raw: str) -> dict:
@@ -86,15 +75,76 @@ def _extract_json(raw: str) -> dict:
         raise OcrUpstreamError(f"Invalid JSON from model: {exc}") from exc
 
 
-async def parse_prelevement_scan(
+_ISO_RE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
+_SLASH_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2,4})$")
+_DASH_RE = re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{2,4})$")
+_MONTH_YEAR_SLASH_RE = re.compile(r"^(\d{1,2})/(\d{4})$")
+_MONTH_YEAR_DASH_RE = re.compile(r"^(\d{1,2})-(\d{4})$")
+_YEAR_MONTH_RE = re.compile(r"^(\d{4})-(\d{1,2})$")
+
+
+def _last_day(year: int, month: int) -> int:
+    return calendar.monthrange(year, month)[1]
+
+
+def _parse_dlc(value: object) -> date | None:
+    """Best-effort parse of heterogeneous DLC strings into a `date`."""
+    if value is None:
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    if not s or s.lower() in ("null", "none", "n/a"):
+        return None
+
+    m = _ISO_RE.match(s)
+    if m:
+        y, mo, d = (int(x) for x in m.groups())
+        try:
+            return date(y, mo, d)
+        except ValueError:
+            return None
+
+    m = _SLASH_RE.match(s) or _DASH_RE.match(s)
+    if m:
+        a, b, c = (int(x) for x in m.groups())
+        year = c + 2000 if c < 100 else c
+        # Day-first (European); swap if clearly year-first
+        day, month = (a, b)
+        if day > 31 or month > 12:
+            day, month = b, a
+        try:
+            return date(year, month, day)
+        except ValueError:
+            return None
+
+    m = _MONTH_YEAR_SLASH_RE.match(s) or _MONTH_YEAR_DASH_RE.match(s)
+    if m:
+        month, year = int(m.group(1)), int(m.group(2))
+        try:
+            return date(year, month, _last_day(year, month))
+        except ValueError:
+            return None
+
+    m = _YEAR_MONTH_RE.match(s)
+    if m:
+        year, month = int(m.group(1)), int(m.group(2))
+        try:
+            return date(year, month, _last_day(year, month))
+        except ValueError:
+            return None
+
+    return None
+
+
+async def extract_vignette_fields(
     image_bytes: bytes,
     content_type: str,
-    hints: list[OcrLineHint],
-) -> list[OcrMatch]:
+) -> VignetteExtraction:
     if not settings.openrouter_api_key:
         raise OcrConfigurationError("DIMED_OPENROUTER_API_KEY is not set — cannot call OCR service")
-    if not hints:
-        return []
 
     mime = content_type if content_type.startswith("image/") else "image/jpeg"
     b64 = base64.b64encode(image_bytes).decode("ascii")
@@ -107,7 +157,7 @@ async def parse_prelevement_scan(
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": _build_user_prompt(hints)},
+                    {"type": "text", "text": _USER_PROMPT},
                     {"type": "image_url", "image_url": {"url": data_url}},
                 ],
             },
@@ -120,7 +170,7 @@ async def parse_prelevement_scan(
         "Authorization": f"Bearer {settings.openrouter_api_key}",
         "Content-Type": "application/json",
         "HTTP-Referer": settings.frontend_url,
-        "X-Title": "DIMED Preparation OCR",
+        "X-Title": "DIMED Vignette OCR",
     }
 
     url = f"{settings.openrouter_base_url.rstrip('/')}/chat/completions"
@@ -128,7 +178,8 @@ async def parse_prelevement_scan(
         async with httpx.AsyncClient(timeout=settings.ocr_timeout_seconds) as client:
             response = await client.post(url, json=payload, headers=headers)
     except httpx.HTTPError as exc:
-        raise OcrUpstreamError(f"OpenRouter request failed: {exc}") from exc
+        reason = str(exc) or type(exc).__name__
+        raise OcrUpstreamError(f"OpenRouter request failed: {reason}") from exc
 
     if response.status_code >= 400:
         raise OcrUpstreamError(f"OpenRouter returned {response.status_code}: {response.text[:300]}")
@@ -139,31 +190,18 @@ async def parse_prelevement_scan(
     except (KeyError, IndexError, ValueError) as exc:
         raise OcrUpstreamError(f"Unexpected OpenRouter payload: {exc}") from exc
 
-    parsed = _extract_json(content if isinstance(content, str) else str(content))
-    raw_matches = parsed.get("matches") or []
-    if not isinstance(raw_matches, list):
-        raise OcrUpstreamError("'matches' is not a list")
+    content_str = content if isinstance(content, str) else str(content)
+    parsed = _extract_json(content_str)
 
-    by_code: dict[str, OcrLineHint] = {h.code_article: h for h in hints}
-    out: list[OcrMatch] = []
-    seen: set[str] = set()
-    for item in raw_matches:
-        if not isinstance(item, dict):
-            continue
-        code = str(item.get("code_article") or "").strip()
-        if not code or code in seen:
-            continue
-        hint = by_code.get(code)
-        if hint is None:
-            logger.warning("OCR returned unknown code_article=%s", code)
-            continue
-        qte_raw = item.get("qte_prelevee")
-        qte: int | None
-        try:
-            qte = int(qte_raw) if qte_raw is not None else None
-        except (TypeError, ValueError):
-            qte = None
-        seen.add(code)
-        out.append(OcrMatch(ligne_id=hint.ligne_id, code_article=code, qte_prelevee=qte))
+    dlc = _parse_dlc(parsed.get("dlc"))
+    code = parsed.get("code_article")
+    code = str(code).strip()[:64] if code else None
+    desig = parsed.get("designation")
+    desig = str(desig).strip()[:500] if desig else None
 
-    return out
+    return VignetteExtraction(
+        dlc=dlc,
+        code_article=code or None,
+        designation=desig or None,
+        raw=content_str[:4000],
+    )
