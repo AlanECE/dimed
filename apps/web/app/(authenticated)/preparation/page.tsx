@@ -27,6 +27,7 @@ import type {
 } from "@/lib/types";
 import {
 	ArrowLeft,
+	Camera,
 	CheckCircle2,
 	ClipboardList,
 	FileDown,
@@ -276,6 +277,7 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 	const [warningsByLine, setWarningsByLine] = useState<Record<string, VignetteWarning[]>>({});
 	const [previewVignette, setPreviewVignette] = useState<VignetteResponse | null>(null);
 	const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
+	const cameraInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
 	useEffect(() => {
 		fetchLignes(order.id);
@@ -348,6 +350,10 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 
 	const handleScanClick = useCallback((ligneId: string) => {
 		fileInputs.current[ligneId]?.click();
+	}, []);
+
+	const handleCameraClick = useCallback((ligneId: string) => {
+		cameraInputs.current[ligneId]?.click();
 	}, []);
 
 	const handleFileSelected = useCallback(
@@ -506,7 +512,7 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 							<TableHead className="w-24 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Prél.
 							</TableHead>
-							<TableHead className="w-28 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+							<TableHead className="w-36 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								OCR
 							</TableHead>
 						</TableRow>
@@ -646,25 +652,54 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 												}
 											}}
 										/>
-										<Button
-											size="sm"
-											variant={ligne.vignette ? "secondary" : "outline"}
-											disabled={isScanning}
-											onClick={() => handleScanClick(ligne.id)}
-											className="h-7 gap-1 text-[11px]"
-										>
-											{isScanning ? (
-												<>
-													<Loader2 className="h-3 w-3 animate-spin" />
-													Analyse…
-												</>
-											) : (
-												<>
-													<ScanLine className="h-3 w-3" />
-													{ligne.vignette ? "Re-scan" : "Scanner"}
-												</>
-											)}
-										</Button>
+										<input
+											ref={(el) => {
+												cameraInputs.current[ligne.id] = el;
+											}}
+											type="file"
+											accept="image/jpeg,image/png,image/webp"
+											capture="environment"
+											className="hidden"
+											onChange={(e) => {
+												const file = e.target.files?.[0];
+												if (file) {
+													void handleFileSelected(ligne, file);
+													e.target.value = "";
+												}
+											}}
+										/>
+										<div className="inline-flex items-center gap-1">
+											<Button
+												size="sm"
+												variant={ligne.vignette ? "secondary" : "outline"}
+												disabled={isScanning}
+												onClick={() => handleScanClick(ligne.id)}
+												className="h-7 gap-1 text-[11px]"
+											>
+												{isScanning ? (
+													<>
+														<Loader2 className="h-3 w-3 animate-spin" />
+														Analyse…
+													</>
+												) : (
+													<>
+														<ScanLine className="h-3 w-3" />
+														{ligne.vignette ? "Re-scan" : "Scanner"}
+													</>
+												)}
+											</Button>
+											<Button
+												size="sm"
+												variant="outline"
+												disabled={isScanning}
+												onClick={() => handleCameraClick(ligne.id)}
+												className="h-7 w-7 p-0"
+												title="Prendre une photo"
+												aria-label="Prendre une photo"
+											>
+												<Camera className="h-3.5 w-3.5" />
+											</Button>
+										</div>
 									</TableCell>
 								</TableRow>
 							);

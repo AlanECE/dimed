@@ -35,8 +35,10 @@ Le flux **galerie bulk** (drag-drop multiple + assignation manuelle) est
 
 ### 1. Scan réussi (golden path)
 
-- **Action** : sur une ligne, cliquer **Scanner** → choisir une photo nette où
-  les 4 champs sont visibles ET dont le **PPA imprimé == catalogue**
+- **Action** : sur une ligne, cliquer **Scanner** (file picker) ou l'icône
+  **caméra** à côté (capture directe sur mobile/tablet via `capture="environment"`)
+  → choisir / prendre une photo nette où les 4 champs sont visibles ET dont
+  le **PPA imprimé == catalogue**
 - **Attendu UI** :
   - [ ] La row prend un effet "scan beam" teal qui balaie pendant l'analyse
   - [ ] Bouton devient **Analyse…** désactivé
