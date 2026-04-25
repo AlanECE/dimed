@@ -1,13 +1,11 @@
 """OCR service — extract pharmaceutical vignette fields via OpenRouter vision LLM.
 
-We send a single photo of a medication vignette (étiquette pharma) and ask the
-model to return a strict JSON with at least the DLC (date de péremption). We
-also request the code_article / designation as auxiliary fields to help the
-caller suggest a matching line in the commande.
+We send a photo of a medication vignette and ask the model to return a strict
+JSON with five fields imprimés on the label : `lot`, `fab`, `exp`, `ppa`, `designation`.
 
-Dates on pharma vignettes come in many formats ("05/2027", "31-05-2027",
-"May 2027", "2027-05-31"...). We normalize everything to a Python `date`,
-falling back to the last day of the month when only month+year are present.
+Dates and prices come in many formats. We normalize:
+- dates with `_parse_date()` (month/year → first or last day depending on `month_default`)
+- prices with `_parse_decimal()` (handles "DA" suffix, FR comma decimals, dot thousands)
 """
 
 import base64
@@ -17,6 +15,8 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from typing import Literal
 
 import httpx
 
@@ -27,8 +27,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class VignetteExtraction:
-    dlc: date | None
-    code_article: str | None
+    lot: str | None
+    fab: date | None
+    exp: date | None
+    ppa: Decimal | None
     designation: str | None
     raw: str
 
@@ -43,20 +45,24 @@ class OcrUpstreamError(RuntimeError):
 
 _SYSTEM_PROMPT = (
     "Tu es un assistant OCR spécialisé dans les vignettes pharmaceutiques "
-    "(étiquettes collées sur les boîtes de médicaments). Ta seule tâche : "
-    "lire la photo et renvoyer un JSON strict avec la date de péremption (DLC), "
-    "le code article si visible, et la désignation du produit."
+    "algériennes (étiquettes collées sur les boîtes de médicaments). Lis "
+    "la photo et renvoie un JSON strict avec les champs imprimés."
 )
 
 _USER_PROMPT = (
     "Analyse cette photo de vignette pharmaceutique. Extrais :\n"
-    "- `dlc` : la date de péremption au format ISO `YYYY-MM-DD`. Si seul le "
-    "mois et l'année sont visibles (ex: 05/2027), utilise le dernier jour du "
-    "mois (2027-05-31). Si absente, renvoie `null`.\n"
-    "- `code_article` : code article / CIP / référence visible (chaîne), ou `null`.\n"
+    "- `lot` : numéro de lot (chaîne alphanumérique imprimée), ou `null`.\n"
+    "- `fab` : date de fabrication au format ISO `YYYY-MM-DD`. Si seul mois et "
+    "année sont visibles (ex 05/2027), utilise le premier jour du mois "
+    "(2027-05-01). Si absente, `null`.\n"
+    "- `exp` : date de péremption au format ISO `YYYY-MM-DD`. Si seul mois et "
+    "année sont visibles (ex 05/2027), utilise le dernier jour du mois "
+    "(2027-05-31). Si absente, `null`.\n"
+    "- `ppa` : Prix Public Algérien en DA (nombre décimal, sans symbole), ou `null`.\n"
     "- `designation` : nom commercial ou DCI du produit, ou `null`.\n\n"
-    "Réponds UNIQUEMENT avec un JSON valide de la forme :\n"
-    '{"dlc": "YYYY-MM-DD"|null, "code_article": "..."|null, "designation": "..."|null}\n'
+    "Réponds UNIQUEMENT avec un JSON valide :\n"
+    '{"lot": "..."|null, "fab": "YYYY-MM-DD"|null, "exp": "YYYY-MM-DD"|null, '
+    '"ppa": 0.00|null, "designation": "..."|null}\n'
     "Aucun texte avant ou après. Aucun bloc Markdown."
 )
 
@@ -87,8 +93,16 @@ def _last_day(year: int, month: int) -> int:
     return calendar.monthrange(year, month)[1]
 
 
-def _parse_dlc(value: object) -> date | None:
-    """Best-effort parse of heterogeneous DLC strings into a `date`."""
+def _parse_date(
+    value: object,
+    *,
+    month_default: Literal["first", "last"] = "last",
+) -> date | None:
+    """Parse heterogeneous date strings to a `date`.
+
+    When only month + year are present, fill the day with either the first
+    (typical for fabrication dates) or last (typical for expiry) day of the month.
+    """
     if value is None:
         return None
     if isinstance(value, date) and not isinstance(value, datetime):
@@ -111,7 +125,6 @@ def _parse_dlc(value: object) -> date | None:
     if m:
         a, b, c = (int(x) for x in m.groups())
         year = c + 2000 if c < 100 else c
-        # Day-first (European); swap if clearly year-first
         day, month = (a, b)
         if day > 31 or month > 12:
             day, month = b, a
@@ -123,20 +136,59 @@ def _parse_dlc(value: object) -> date | None:
     m = _MONTH_YEAR_SLASH_RE.match(s) or _MONTH_YEAR_DASH_RE.match(s)
     if m:
         month, year = int(m.group(1)), int(m.group(2))
+        day = 1 if month_default == "first" else _last_day(year, month)
         try:
-            return date(year, month, _last_day(year, month))
+            return date(year, month, day)
         except ValueError:
             return None
 
     m = _YEAR_MONTH_RE.match(s)
     if m:
         year, month = int(m.group(1)), int(m.group(2))
+        day = 1 if month_default == "first" else _last_day(year, month)
         try:
-            return date(year, month, _last_day(year, month))
+            return date(year, month, day)
         except ValueError:
             return None
 
     return None
+
+
+_DECIMAL_STRIP_RE = re.compile(r"[^\d,.\-]")
+
+
+def _parse_decimal(value: object) -> Decimal | None:
+    """Parse heterogeneous numeric strings to Decimal.
+
+    Handles "DA" suffix, spaces, FR comma decimals ("450,50"), dot thousands
+    ("1.250,00"), and US-style ("1,250.00").
+    """
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, (int, float)):
+        try:
+            return Decimal(str(value))
+        except InvalidOperation:
+            return None
+    if not isinstance(value, str):
+        return None
+    s = _DECIMAL_STRIP_RE.sub("", value).strip()
+    if not s:
+        return None
+    if "," in s and "." in s:
+        # Whichever appears last is the decimal separator
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s:
+        s = s.replace(",", ".")
+    try:
+        return Decimal(s)
+    except InvalidOperation:
+        return None
 
 
 async def extract_vignette_fields(
@@ -193,15 +245,16 @@ async def extract_vignette_fields(
     content_str = content if isinstance(content, str) else str(content)
     parsed = _extract_json(content_str)
 
-    dlc = _parse_dlc(parsed.get("dlc"))
-    code = parsed.get("code_article")
-    code = str(code).strip()[:64] if code else None
+    lot = parsed.get("lot")
+    lot = str(lot).strip()[:64] if lot else None
     desig = parsed.get("designation")
     desig = str(desig).strip()[:500] if desig else None
 
     return VignetteExtraction(
-        dlc=dlc,
-        code_article=code or None,
+        lot=lot or None,
+        fab=_parse_date(parsed.get("fab"), month_default="first"),
+        exp=_parse_date(parsed.get("exp"), month_default="last"),
+        ppa=_parse_decimal(parsed.get("ppa")),
         designation=desig or None,
         raw=content_str[:4000],
     )
