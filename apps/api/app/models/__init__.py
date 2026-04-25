@@ -14,6 +14,7 @@ from app.models.references import (
 )
 from app.models.state_machine import VALID_TRANSITIONS, validate_transition
 from app.models.user import User, UserRole
+from app.models.vignette import Vignette
 
 __all__ = [
     "User",
@@ -30,6 +31,7 @@ __all__ = [
     "FeuilleDeRoute",
     "Arrivage",
     "AuditLog",
+    "Vignette",
     "validate_transition",
     "VALID_TRANSITIONS",
     "next_commande_ref",

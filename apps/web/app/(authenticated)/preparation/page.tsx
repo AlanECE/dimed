@@ -14,9 +14,18 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { VignetteCaptureDialog } from "@/components/vignette-capture-dialog";
+import { VignettePreviewModal } from "@/components/vignette-preview-modal";
 import { useOrders } from "@/hooks/use-orders";
-import { usePreparation } from "@/hooks/use-preparation";
-import type { CaddiePoolResponse, LignePreparationResponse, OrderResponse } from "@/lib/types";
+import { type UpdateLignePatch, usePreparation } from "@/hooks/use-preparation";
+import { API_BASE } from "@/lib/api";
+import type {
+	CaddiePoolResponse,
+	LignePreparationResponse,
+	OrderResponse,
+	VignetteResponse,
+	VignetteWarning,
+} from "@/lib/types";
 import {
 	ArrowLeft,
 	CheckCircle2,
@@ -27,6 +36,7 @@ import {
 	Play,
 	ScanLine,
 	ShoppingCart,
+	X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -98,7 +108,6 @@ function PreparationList({ onSelect }: { onSelect: (o: OrderResponse) => void })
 				</div>
 			</div>
 
-			{/* À préparer */}
 			<OrderSection
 				title="À préparer"
 				orders={acceptees}
@@ -116,7 +125,6 @@ function PreparationList({ onSelect }: { onSelect: (o: OrderResponse) => void })
 				)}
 			/>
 
-			{/* En cours */}
 			<OrderSection
 				title="En cours de préparation"
 				orders={enPrep}
@@ -247,7 +255,7 @@ function OrderSection({
 }
 
 // ---------------------------------------------------------------------------
-// Detail view — article by article preparation
+// Detail view — article by article preparation with per-line OCR scan
 // ---------------------------------------------------------------------------
 
 function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: () => void }) {
@@ -258,12 +266,17 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		updateLigne,
 		finalizePreparation,
 		downloadListePrelevement,
-		scanPrelevement,
+		scanLigneVignette,
+		clearLigneVignette,
 	} = usePreparation();
 	const [localLignes, setLocalLignes] = useState<LignePreparationResponse[]>([]);
 	const [saving, setSaving] = useState(false);
-	const [scanning, setScanning] = useState(false);
-	const fileInputRef = useRef<HTMLInputElement>(null);
+	const [scanningId, setScanningId] = useState<string | null>(null);
+	const [justScannedId, setJustScannedId] = useState<string | null>(null);
+	const [pulseCheckId, setPulseCheckId] = useState<string | null>(null);
+	const [warningsByLine, setWarningsByLine] = useState<Record<string, VignetteWarning[]>>({});
+	const [previewVignette, setPreviewVignette] = useState<VignetteResponse | null>(null);
+	const [captureForLineId, setCaptureForLineId] = useState<string | null>(null);
 
 	useEffect(() => {
 		fetchLignes(order.id);
@@ -280,41 +293,31 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		}
 	}, [detail]);
 
-	const handleToggle = useCallback(
-		async (ligne: LignePreparationResponse) => {
-			const newVerifie = !ligne.verifie;
-			const qte = ligne.qte_prelevee ?? ligne.qte_demandee;
-			setLocalLignes((prev) =>
-				prev.map((l) => (l.id === ligne.id ? { ...l, verifie: newVerifie } : l)),
-			);
+	const patchLigne = useCallback(
+		async (
+			ligneId: string,
+			patch: UpdateLignePatch,
+			optimistic?: Partial<LignePreparationResponse>,
+		) => {
+			if (optimistic) {
+				setLocalLignes((prev) => prev.map((l) => (l.id === ligneId ? { ...l, ...optimistic } : l)));
+			}
 			try {
-				await updateLigne(order.id, ligne.id, qte, newVerifie);
+				await updateLigne(order.id, ligneId, patch);
 			} catch {
 				toast.error("Erreur mise à jour");
-				setLocalLignes((prev) =>
-					prev.map((l) => (l.id === ligne.id ? { ...l, verifie: !newVerifie } : l)),
-				);
+				fetchLignes(order.id);
 			}
 		},
-		[order.id, updateLigne],
+		[order.id, updateLigne, fetchLignes],
 	);
 
-	const handleOcrToggle = useCallback(
-		async (ligne: LignePreparationResponse) => {
-			const newOcr = !ligne.ocr_verifie;
-			setLocalLignes((prev) =>
-				prev.map((l) => (l.id === ligne.id ? { ...l, ocr_verifie: newOcr } : l)),
-			);
-			try {
-				await updateLigne(order.id, ligne.id, null, null, newOcr);
-			} catch {
-				toast.error("Erreur mise à jour OCR");
-				setLocalLignes((prev) =>
-					prev.map((l) => (l.id === ligne.id ? { ...l, ocr_verifie: !newOcr } : l)),
-				);
-			}
+	const handleToggle = useCallback(
+		(ligne: LignePreparationResponse) => {
+			const newVerifie = !ligne.verifie;
+			void patchLigne(ligne.id, { verifie: newVerifie }, { verifie: newVerifie });
 		},
-		[order.id, updateLigne],
+		[patchLigne],
 	);
 
 	const handleQteChange = useCallback((ligne: LignePreparationResponse, qte: number) => {
@@ -327,40 +330,101 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		async (ligne: LignePreparationResponse) => {
 			const current = localLignes.find((l) => l.id === ligne.id);
 			if (!current) return;
-			try {
-				await updateLigne(order.id, ligne.id, current.qte_prelevee ?? 0, current.verifie);
-			} catch {
-				toast.error("Erreur sauvegarde quantité");
-			}
+			void patchLigne(ligne.id, { qte_prelevee: current.qte_prelevee ?? 0 });
 		},
-		[order.id, localLignes, updateLigne],
+		[localLignes, patchLigne],
 	);
 
-	const handleScanFile = useCallback(
-		async (file: File) => {
-			setScanning(true);
+	// Manual edit on lot/fab/exp/ppa decoche verifie
+	const handleFieldEdit = useCallback(
+		(ligne: LignePreparationResponse, field: "n_lot" | "fab" | "exp" | "ppa", value: string) => {
+			const cleaned = value.trim() === "" ? null : value;
+			setLocalLignes((prev) =>
+				prev.map((l) => (l.id === ligne.id ? { ...l, [field]: cleaned, verifie: false } : l)),
+			);
+			void patchLigne(ligne.id, { [field]: cleaned, verifie: false });
+		},
+		[patchLigne],
+	);
+
+	const handleScanClick = useCallback((ligneId: string) => {
+		setCaptureForLineId(ligneId);
+	}, []);
+
+	const handleFileSelected = useCallback(
+		async (ligne: LignePreparationResponse, file: File) => {
+			setScanningId(ligne.id);
 			try {
-				const res = await scanPrelevement(order.id, file);
-				if (res.matched_count === 0) {
-					toast.warning("Aucune ligne reconnue sur le scan");
+				const result = await scanLigneVignette(order.id, ligne.id, file);
+				setLocalLignes((prev) => prev.map((l) => (l.id === ligne.id ? result.ligne : l)));
+				setWarningsByLine((prev) => ({ ...prev, [ligne.id]: result.warnings }));
+				setJustScannedId(ligne.id);
+				if (result.warnings.length === 0) {
+					setPulseCheckId(ligne.id);
+					toast.success("Vignette scannée et validée");
 				} else {
-					toast.success(`${res.matched_count}/${res.total_lines} lignes cochées via OCR`);
-					await fetchLignes(order.id);
+					toast.warning(formatWarnings(result.warnings));
 				}
+				setTimeout(() => setJustScannedId(null), 800);
+				setTimeout(() => setPulseCheckId(null), 700);
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : "Erreur OCR");
 			} finally {
-				setScanning(false);
+				setScanningId(null);
 			}
 		},
-		[order.id, scanPrelevement, fetchLignes],
+		[order.id, scanLigneVignette],
+	);
+
+	const handleClearVignette = useCallback(
+		async (ligne: LignePreparationResponse) => {
+			try {
+				await clearLigneVignette(order.id, ligne.id);
+			} catch (err) {
+				// Treat 404 as already-cleared (state was stale): no-op + silent.
+				const is404 = err instanceof Error && /404|not found/i.test(err.message);
+				if (!is404) {
+					toast.error("Erreur suppression vignette");
+					return;
+				}
+			}
+			setLocalLignes((prev) =>
+				prev.map((l) =>
+					l.id === ligne.id
+						? {
+								...l,
+								vignette: null,
+								n_lot: null,
+								fab: null,
+								exp: null,
+								ppa: null,
+								verifie: false,
+							}
+						: l,
+				),
+			);
+			setWarningsByLine((prev) => {
+				const next = { ...prev };
+				delete next[ligne.id];
+				return next;
+			});
+			setPreviewVignette(null);
+			toast.success("Vignette retirée");
+		},
+		[order.id, clearLigneVignette],
 	);
 
 	const allVerified = localLignes.length > 0 && localLignes.every((l) => l.verifie);
+	const missingExp = localLignes.filter((l) => !l.exp).length;
 
 	const handleFinalize = useCallback(async () => {
 		setSaving(true);
 		try {
+			if (missingExp > 0) {
+				toast.warning(
+					`Attention : ${missingExp} ligne${missingExp > 1 ? "s" : ""} sans date de péremption`,
+				);
+			}
 			await finalizePreparation(order.id);
 			toast.success("Préparation envoyée au contrôleur");
 			onBack();
@@ -369,7 +433,7 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		} finally {
 			setSaving(false);
 		}
-	}, [order.id, finalizePreparation, onBack]);
+	}, [order.id, finalizePreparation, onBack, missingExp]);
 
 	if (loading) {
 		return (
@@ -382,7 +446,6 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 
 	return (
 		<div className="flex flex-col gap-6">
-			{/* Header */}
 			<div className="flex items-center gap-3">
 				<Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5">
 					<ArrowLeft className="h-4 w-4" />
@@ -397,31 +460,6 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 				<Button
 					variant="outline"
 					size="sm"
-					onClick={() => fileInputRef.current?.click()}
-					disabled={scanning}
-					className="gap-1.5 text-[12px]"
-				>
-					{scanning ? (
-						<Loader2 className="h-3.5 w-3.5 animate-spin" />
-					) : (
-						<ScanLine className="h-3.5 w-3.5" />
-					)}
-					Scanner OCR
-				</Button>
-				<input
-					ref={fileInputRef}
-					type="file"
-					accept="image/*"
-					className="hidden"
-					onChange={(e) => {
-						const f = e.target.files?.[0];
-						if (f) handleScanFile(f);
-						e.target.value = "";
-					}}
-				/>
-				<Button
-					variant="outline"
-					size="sm"
 					onClick={() => downloadListePrelevement(order.id)}
 					className="gap-1.5 text-[12px]"
 				>
@@ -430,7 +468,33 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 				</Button>
 			</div>
 
-			{/* Caddie affecte */}
+			<VignettePreviewModal
+				vignette={previewVignette}
+				onClose={() => setPreviewVignette(null)}
+				onRescan={() => {
+					const ligne = localLignes.find((l) => l.vignette?.id === previewVignette?.id);
+					if (ligne) {
+						setPreviewVignette(null);
+						setCaptureForLineId(ligne.id);
+					}
+				}}
+				onDelete={() => {
+					const ligne = localLignes.find((l) => l.vignette?.id === previewVignette?.id);
+					if (ligne) void handleClearVignette(ligne);
+				}}
+			/>
+
+			<VignetteCaptureDialog
+				open={captureForLineId !== null}
+				onOpenChange={(open) => {
+					if (!open) setCaptureForLineId(null);
+				}}
+				onCapture={(file) => {
+					const ligne = localLignes.find((l) => l.id === captureForLineId);
+					if (ligne) void handleFileSelected(ligne, file);
+				}}
+			/>
+
 			{order.caddie_pool && (
 				<div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
 					<ShoppingCart className="h-4 w-4 text-primary" />
@@ -443,67 +507,145 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 				</div>
 			)}
 
-			{/* Article list */}
 			<div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
 				<Table>
 					<TableHeader>
 						<TableRow className="border-border/40 bg-muted/40 hover:bg-muted/40">
-							<TableHead className="w-12 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-								Vérifié
+							<TableHead className="w-14 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								OK
 							</TableHead>
-							<TableHead className="w-12 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-								OCR
+							<TableHead className="w-14 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								&nbsp;
 							</TableHead>
 							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Désignation
 							</TableHead>
-							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+							<TableHead className="w-28 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Lot
 							</TableHead>
-							<TableHead className="text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-								Qté dem.
+							<TableHead className="w-28 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Fab
 							</TableHead>
-							<TableHead className="text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-								Qté prél.
+							<TableHead className="w-28 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Exp
 							</TableHead>
-							<TableHead className="text-right text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-								PU (DA)
+							<TableHead className="w-28 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								PPA
+							</TableHead>
+							<TableHead className="w-20 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Dem.
+							</TableHead>
+							<TableHead className="w-24 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Prél.
+							</TableHead>
+							<TableHead className="w-36 text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								OCR
 							</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
 						{localLignes.map((ligne) => {
 							const isPartial = (ligne.qte_prelevee ?? 0) < ligne.qte_demandee;
-							const fullyValidated = ligne.verifie && ligne.ocr_verifie;
+							const isScanning = scanningId === ligne.id;
+							const justScanned = justScannedId === ligne.id;
+							const shouldPulse = pulseCheckId === ligne.id;
+							const lineWarnings = warningsByLine[ligne.id] ?? [];
+							const ppaDivergent = lineWarnings.includes("ppa_divergent");
 							return (
 								<TableRow
 									key={ligne.id}
-									className={`border-border/30 transition-colors hover:bg-muted/40 ${
-										fullyValidated
-											? "bg-emerald-100/60"
-											: ligne.verifie || ligne.ocr_verifie
-												? "bg-emerald-50/30"
-												: ""
-									}`}
+									className={`group border-border/30 transition-colors hover:bg-muted/40 ${
+										isScanning ? "scan-row" : ""
+									} ${ligne.verifie ? "bg-emerald-50/40" : ""}`}
 								>
 									<TableCell className="text-center">
-										<Checkbox
-											checked={ligne.verifie}
-											onCheckedChange={() => handleToggle(ligne)}
-											aria-label="Verifie"
-										/>
+										<span className={shouldPulse ? "pulse-check inline-block" : "inline-block"}>
+											<Checkbox
+												checked={ligne.verifie}
+												onCheckedChange={() => handleToggle(ligne)}
+												aria-label="Verifie"
+											/>
+										</span>
 									</TableCell>
-									<TableCell className="text-center">
-										<Checkbox
-											checked={ligne.ocr_verifie}
-											onCheckedChange={() => handleOcrToggle(ligne)}
-											aria-label="OCR"
-										/>
+									<TableCell>
+										<div className="relative">
+											<button
+												type="button"
+												disabled={!ligne.vignette}
+												onClick={() => ligne.vignette && setPreviewVignette(ligne.vignette)}
+												className={`block h-9 w-9 overflow-hidden rounded-md border border-amber-300/60 bg-gradient-to-br from-amber-200 to-amber-400 transition ${
+													ligne.vignette
+														? "cursor-zoom-in hover:scale-105"
+														: "cursor-default opacity-40"
+												}`}
+												aria-label="Aperçu vignette"
+											>
+												{ligne.vignette && (
+													<img
+														src={`${API_BASE}${ligne.vignette.file_url}`}
+														alt=""
+														className="h-full w-full object-cover"
+													/>
+												)}
+											</button>
+											{ligne.vignette && (
+												<button
+													type="button"
+													onClick={() => handleClearVignette(ligne)}
+													className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-red-500 text-white shadow group-hover:flex"
+													aria-label="Retirer la vignette"
+												>
+													<X className="h-2.5 w-2.5" />
+												</button>
+											)}
+										</div>
 									</TableCell>
 									<TableCell className="text-[13px] font-medium">{ligne.designation}</TableCell>
-									<TableCell className="font-mono text-[12px] text-muted-foreground">
-										{ligne.n_lot || "—"}
-									</TableCell>
+									<td colSpan={4} className="p-0">
+										<div className={`grid grid-cols-4 ${justScanned ? "reveal-staggered" : ""}`}>
+											<div className="px-2 py-1.5">
+												<Input
+													value={ligne.n_lot ?? ""}
+													onChange={(e) => handleFieldEdit(ligne, "n_lot", e.target.value)}
+													placeholder="—"
+													className="h-7 font-mono text-[12px]"
+												/>
+											</div>
+											<div className="px-2 py-1.5">
+												<Input
+													type="date"
+													value={ligne.fab ?? ""}
+													onChange={(e) => handleFieldEdit(ligne, "fab", e.target.value)}
+													className="h-7 font-mono text-[12px]"
+												/>
+											</div>
+											<div className="px-2 py-1.5">
+												<Input
+													type="date"
+													value={ligne.exp ?? ""}
+													onChange={(e) => handleFieldEdit(ligne, "exp", e.target.value)}
+													className="h-7 font-mono text-[12px]"
+												/>
+											</div>
+											<div className="px-2 py-1.5">
+												<Input
+													type="number"
+													step="0.01"
+													value={ligne.ppa ?? ""}
+													onChange={(e) => handleFieldEdit(ligne, "ppa", e.target.value)}
+													placeholder="—"
+													className={`h-7 font-mono text-[12px] tabular-nums ${
+														ppaDivergent ? "border-amber-400" : ""
+													}`}
+												/>
+												{ppaDivergent && ligne.medicament_ppa && (
+													<div className="mt-0.5 inline-flex items-center rounded border border-amber-300 bg-amber-100 px-1 py-0.5 text-[9px] font-semibold text-amber-900">
+														cat. {ligne.medicament_ppa} — divergent
+													</div>
+												)}
+											</div>
+										</div>
+									</td>
 									<TableCell className="text-center text-[13px] tabular-nums">
 										{ligne.qte_demandee}
 									</TableCell>
@@ -515,13 +657,31 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 											value={ligne.qte_prelevee ?? ""}
 											onChange={(e) => handleQteChange(ligne, Number.parseInt(e.target.value) || 0)}
 											onBlur={() => handleQteBlur(ligne)}
-											className={`mx-auto h-8 w-20 text-center text-[13px] tabular-nums ${
+											className={`mx-auto h-7 w-20 text-center text-[13px] tabular-nums ${
 												isPartial ? "border-red-300 text-red-700" : ""
 											}`}
 										/>
 									</TableCell>
-									<TableCell className="text-right text-[13px] tabular-nums">
-										{ligne.prix_unitaire.toLocaleString("fr-FR")}
+									<TableCell className="text-center">
+										<Button
+											size="sm"
+											variant={ligne.vignette ? "secondary" : "outline"}
+											disabled={isScanning}
+											onClick={() => handleScanClick(ligne.id)}
+											className="h-7 gap-1 text-[11px]"
+										>
+											{isScanning ? (
+												<>
+													<Loader2 className="h-3 w-3 animate-spin" />
+													Analyse…
+												</>
+											) : (
+												<>
+													<ScanLine className="h-3 w-3" />
+													{ligne.vignette ? "Re-scan" : "Scanner"}
+												</>
+											)}
+										</Button>
 									</TableCell>
 								</TableRow>
 							);
@@ -530,7 +690,6 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 				</Table>
 			</div>
 
-			{/* Footer: finalize */}
 			<div className="flex items-center justify-end rounded-xl border border-border/60 bg-card px-5 py-4 shadow-sm">
 				<Button
 					onClick={handleFinalize}
@@ -548,4 +707,15 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 			</div>
 		</div>
 	);
+}
+
+function formatWarnings(warnings: VignetteWarning[]): string {
+	const labels: Record<VignetteWarning, string> = {
+		ppa_divergent: "PPA divergent du catalogue",
+		missing_lot: "lot manquant",
+		missing_fab: "date de fabrication manquante",
+		missing_exp: "date de péremption manquante",
+		missing_ppa: "PPA manquant",
+	};
+	return `Vérification : ${warnings.map((w) => labels[w]).join(", ")}`;
 }

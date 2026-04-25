@@ -104,8 +104,10 @@ async def get_order_with_lines(db: AsyncSession, order_id: UUID) -> Commande | N
                     LigneCommande.prix_unitaire,
                     LigneCommande.remise_pct,
                     LigneCommande.n_lot,
+                    LigneCommande.fab,
+                    LigneCommande.exp,
+                    LigneCommande.ppa,
                     LigneCommande.verifie,
-                    LigneCommande.ocr_verifie,
                 )
             )
         )

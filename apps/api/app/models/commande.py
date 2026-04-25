@@ -1,10 +1,11 @@
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -87,9 +88,9 @@ class LigneCommande(AuditMixin, Base):
         Numeric(5, 2), nullable=False, default=Decimal("0.00"), server_default="0"
     )
     n_lot: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    fab: Mapped[date | None] = mapped_column(Date, nullable=True)
+    exp: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ppa: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     verifie: Mapped[bool] = mapped_column(Boolean, default=False)
-    ocr_verifie: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False, server_default="false"
-    )
 
     commande: Mapped["Commande"] = relationship(back_populates="lignes")

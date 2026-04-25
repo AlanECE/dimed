@@ -11,9 +11,7 @@ RUN uv pip install --system -e .
 # ---- Builder (prod) ----
 FROM base AS builder
 COPY apps/api/pyproject.toml apps/api/uv.lock* ./
-COPY packages/ocr /packages/ocr
-RUN uv pip install --system . && \
-    uv pip install --system -e /packages/ocr
+RUN uv pip install --system .
 COPY apps/api/ .
 
 # ---- Production ----

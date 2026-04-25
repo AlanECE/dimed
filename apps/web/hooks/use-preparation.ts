@@ -1,8 +1,17 @@
 "use client";
 
 import { API_BASE, fetchApi } from "@/lib/api";
-import type { PreparationDetailResponse } from "@/lib/types";
+import type { LigneOcrResponse, PreparationDetailResponse } from "@/lib/types";
 import { useCallback, useState } from "react";
+
+export type UpdateLignePatch = {
+	qte_prelevee?: number | null;
+	verifie?: boolean | null;
+	n_lot?: string | null;
+	fab?: string | null;
+	exp?: string | null;
+	ppa?: string | null;
+};
 
 export function usePreparation() {
 	const [detail, setDetail] = useState<PreparationDetailResponse | null>(null);
@@ -21,17 +30,11 @@ export function usePreparation() {
 	}, []);
 
 	const updateLigne = useCallback(
-		async (
-			commandeId: string,
-			ligneId: string,
-			qtePrelevee: number | null,
-			verifie: boolean | null,
-			ocrVerifie?: boolean,
-		) => {
+		async (commandeId: string, ligneId: string, patch: UpdateLignePatch) => {
 			const body: Record<string, unknown> = {};
-			if (qtePrelevee !== null) body.qte_prelevee = qtePrelevee;
-			if (verifie !== null) body.verifie = verifie;
-			if (ocrVerifie !== undefined) body.ocr_verifie = ocrVerifie;
+			for (const [k, v] of Object.entries(patch)) {
+				if (v !== undefined) body[k] = v;
+			}
 			await fetchApi(`/commandes/${commandeId}/update-ligne/${ligneId}`, {
 				method: "PATCH",
 				body: JSON.stringify(body),
@@ -59,23 +62,29 @@ export function usePreparation() {
 		});
 	}, []);
 
-	const scanPrelevement = useCallback(
-		async (
-			commandeId: string,
-			file: File,
-		): Promise<{ matched_count: number; total_lines: number; matched_ligne_ids: string[] }> => {
+	const scanLigneVignette = useCallback(
+		async (commandeId: string, ligneId: string, file: File): Promise<LigneOcrResponse> => {
 			const form = new FormData();
 			form.append("file", file);
-			const res = await fetch(`${API_BASE}/commandes/${commandeId}/ocr-scan`, {
+			const res = await fetch(`${API_BASE}/commandes/${commandeId}/lignes/${ligneId}/vignette`, {
 				method: "POST",
 				body: form,
 				credentials: "include",
 			});
 			if (!res.ok) {
 				const body = await res.json().catch(() => ({ detail: "Erreur OCR" }));
-				throw new Error(body.detail ?? `OCR ${res.status}`);
+				throw new Error(body.detail ?? `Vignette ${res.status}`);
 			}
 			return res.json();
+		},
+		[],
+	);
+
+	const clearLigneVignette = useCallback(
+		async (commandeId: string, ligneId: string): Promise<void> => {
+			await fetchApi(`/commandes/${commandeId}/lignes/${ligneId}/vignette`, {
+				method: "DELETE",
+			});
 		},
 		[],
 	);
@@ -103,6 +112,7 @@ export function usePreparation() {
 		finalizePreparation,
 		validateControl,
 		downloadListePrelevement,
-		scanPrelevement,
+		scanLigneVignette,
+		clearLigneVignette,
 	};
 }

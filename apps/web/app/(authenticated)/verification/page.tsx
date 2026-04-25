@@ -287,7 +287,7 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 		try {
 			for (const l of detail.lignes) {
 				const counted = controlCounts[l.id] ?? 0;
-				await updateLigne(order.id, l.id, counted, true);
+				await updateLigne(order.id, l.id, { qte_prelevee: counted, verifie: true });
 			}
 			// Assign route line (camion)
 			await fetchApi(`/commandes/${order.id}/assign-camion`, {
