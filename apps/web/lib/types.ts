@@ -73,7 +73,9 @@ export type LigneResponse = {
 	prix_unitaire: number;
 	remise_pct: number;
 	n_lot: string | null;
-	dlc: string | null;
+	fab: string | null;
+	exp: string | null;
+	ppa: string | null;
 };
 
 export type UpdateRemisesRequest = {
@@ -251,6 +253,17 @@ export type FeuilleDeRouteResponse = {
 	}[];
 };
 
+export type VignetteResponse = {
+	id: string;
+	filename: string;
+	file_url: string;
+	extracted_lot: string | null;
+	extracted_fab: string | null;
+	extracted_exp: string | null;
+	extracted_ppa: string | null;
+	extracted_designation: string | null;
+};
+
 export type LignePreparationResponse = {
 	id: string;
 	medicament_id: string;
@@ -258,21 +271,27 @@ export type LignePreparationResponse = {
 	qte_demandee: number;
 	qte_prelevee: number | null;
 	prix_unitaire: number;
+	remise_pct: number;
 	n_lot: string | null;
-	dlc: string | null;
+	fab: string | null;
+	exp: string | null;
+	ppa: string | null;
+	medicament_ppa: string | null;
 	verifie: boolean;
+	vignette: VignetteResponse | null;
 };
 
-export type VignetteResponse = {
-	id: string;
-	commande_id: string;
-	ligne_id: string | null;
-	ligne_designation: string | null;
-	path: string;
-	extracted_dlc: string | null;
-	extracted_code_article: string | null;
-	uploaded_at: string | null;
-	suggested_ligne_id?: string | null;
+export type VignetteWarning =
+	| "ppa_divergent"
+	| "missing_lot"
+	| "missing_fab"
+	| "missing_exp"
+	| "missing_ppa";
+
+export type LigneOcrResponse = {
+	ligne: LignePreparationResponse;
+	vignette: VignetteResponse;
+	warnings: VignetteWarning[];
 };
 
 export type PreparationDetailResponse = {

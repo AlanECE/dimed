@@ -1,8 +1,17 @@
 "use client";
 
 import { API_BASE, fetchApi } from "@/lib/api";
-import type { PreparationDetailResponse, VignetteResponse } from "@/lib/types";
+import type { LigneOcrResponse, PreparationDetailResponse } from "@/lib/types";
 import { useCallback, useState } from "react";
+
+export type UpdateLignePatch = {
+	qte_prelevee?: number | null;
+	verifie?: boolean | null;
+	n_lot?: string | null;
+	fab?: string | null;
+	exp?: string | null;
+	ppa?: string | null;
+};
 
 export function usePreparation() {
 	const [detail, setDetail] = useState<PreparationDetailResponse | null>(null);
@@ -21,17 +30,11 @@ export function usePreparation() {
 	}, []);
 
 	const updateLigne = useCallback(
-		async (
-			commandeId: string,
-			ligneId: string,
-			qtePrelevee: number | null,
-			verifie: boolean | null,
-			dlc?: string | null,
-		) => {
+		async (commandeId: string, ligneId: string, patch: UpdateLignePatch) => {
 			const body: Record<string, unknown> = {};
-			if (qtePrelevee !== null) body.qte_prelevee = qtePrelevee;
-			if (verifie !== null) body.verifie = verifie;
-			if (dlc !== undefined) body.dlc = dlc;
+			for (const [k, v] of Object.entries(patch)) {
+				if (v !== undefined) body[k] = v;
+			}
 			await fetchApi(`/commandes/${commandeId}/update-ligne/${ligneId}`, {
 				method: "PATCH",
 				body: JSON.stringify(body),
@@ -59,24 +62,17 @@ export function usePreparation() {
 		});
 	}, []);
 
-	const fetchVignettes = useCallback(async (commandeId: string): Promise<VignetteResponse[]> => {
-		const res = await fetchApi<{ vignettes: VignetteResponse[] }>(
-			`/commandes/${commandeId}/vignettes`,
-		);
-		return res.vignettes;
-	}, []);
-
-	const uploadVignette = useCallback(
-		async (commandeId: string, file: File): Promise<VignetteResponse> => {
+	const scanLigneVignette = useCallback(
+		async (commandeId: string, ligneId: string, file: File): Promise<LigneOcrResponse> => {
 			const form = new FormData();
 			form.append("file", file);
-			const res = await fetch(`${API_BASE}/commandes/${commandeId}/vignettes`, {
+			const res = await fetch(`${API_BASE}/commandes/${commandeId}/lignes/${ligneId}/vignette`, {
 				method: "POST",
 				body: form,
 				credentials: "include",
 			});
 			if (!res.ok) {
-				const body = await res.json().catch(() => ({ detail: "Erreur upload" }));
+				const body = await res.json().catch(() => ({ detail: "Erreur OCR" }));
 				throw new Error(body.detail ?? `Vignette ${res.status}`);
 			}
 			return res.json();
@@ -84,23 +80,9 @@ export function usePreparation() {
 		[],
 	);
 
-	const assignVignette = useCallback(
-		async (
-			commandeId: string,
-			vignetteId: string,
-			payload: { ligne_id: string | null; dlc?: string | null },
-		): Promise<VignetteResponse> => {
-			return fetchApi<VignetteResponse>(`/commandes/${commandeId}/vignettes/${vignetteId}`, {
-				method: "PATCH",
-				body: JSON.stringify(payload),
-			});
-		},
-		[],
-	);
-
-	const deleteVignette = useCallback(
-		async (commandeId: string, vignetteId: string): Promise<void> => {
-			await fetchApi(`/commandes/${commandeId}/vignettes/${vignetteId}`, {
+	const clearLigneVignette = useCallback(
+		async (commandeId: string, ligneId: string): Promise<void> => {
+			await fetchApi(`/commandes/${commandeId}/lignes/${ligneId}/vignette`, {
 				method: "DELETE",
 			});
 		},
@@ -130,9 +112,7 @@ export function usePreparation() {
 		finalizePreparation,
 		validateControl,
 		downloadListePrelevement,
-		fetchVignettes,
-		uploadVignette,
-		assignVignette,
-		deleteVignette,
+		scanLigneVignette,
+		clearLigneVignette,
 	};
 }

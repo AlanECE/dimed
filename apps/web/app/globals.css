@@ -258,3 +258,71 @@ tr.hoverable-row:hover {
 ::-webkit-scrollbar-thumb:hover {
 	background: var(--muted-foreground);
 }
+
+/* ─── Per-ligne OCR scan animations ──────────────────────────────────── */
+
+@keyframes scan-beam {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(100%);
+	}
+}
+
+@keyframes reveal-up {
+	0% {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	100% {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes pulse-check {
+	0%,
+	100% {
+		box-shadow: 0 0 0 0 rgba(15, 118, 110, 0.4);
+	}
+	50% {
+		box-shadow: 0 0 0 8px rgba(15, 118, 110, 0);
+	}
+}
+
+.scan-row {
+	position: relative;
+	overflow: hidden;
+}
+
+.scan-row::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	background: linear-gradient(90deg, transparent, rgba(15, 118, 110, 0.18), transparent);
+	width: 80px;
+	animation: scan-beam 1.2s ease-in-out infinite;
+}
+
+.reveal-staggered > * {
+	animation: reveal-up 280ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.reveal-staggered > *:nth-child(1) {
+	animation-delay: 50ms;
+}
+.reveal-staggered > *:nth-child(2) {
+	animation-delay: 150ms;
+}
+.reveal-staggered > *:nth-child(3) {
+	animation-delay: 250ms;
+}
+.reveal-staggered > *:nth-child(4) {
+	animation-delay: 350ms;
+}
+
+.pulse-check {
+	animation: pulse-check 600ms ease-out 1;
+	border-radius: 4px;
+}
