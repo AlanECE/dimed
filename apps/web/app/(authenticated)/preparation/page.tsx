@@ -14,6 +14,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { VignetteCaptureDialog } from "@/components/vignette-capture-dialog";
 import { VignettePreviewModal } from "@/components/vignette-preview-modal";
 import { useOrders } from "@/hooks/use-orders";
 import { type UpdateLignePatch, usePreparation } from "@/hooks/use-preparation";
@@ -27,7 +28,6 @@ import type {
 } from "@/lib/types";
 import {
 	ArrowLeft,
-	Camera,
 	CheckCircle2,
 	ClipboardList,
 	FileDown,
@@ -276,8 +276,7 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 	const [pulseCheckId, setPulseCheckId] = useState<string | null>(null);
 	const [warningsByLine, setWarningsByLine] = useState<Record<string, VignetteWarning[]>>({});
 	const [previewVignette, setPreviewVignette] = useState<VignetteResponse | null>(null);
-	const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
-	const cameraInputs = useRef<Record<string, HTMLInputElement | null>>({});
+	const [captureForLineId, setCaptureForLineId] = useState<string | null>(null);
 
 	useEffect(() => {
 		fetchLignes(order.id);
@@ -349,11 +348,7 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 	);
 
 	const handleScanClick = useCallback((ligneId: string) => {
-		fileInputs.current[ligneId]?.click();
-	}, []);
-
-	const handleCameraClick = useCallback((ligneId: string) => {
-		cameraInputs.current[ligneId]?.click();
+		setCaptureForLineId(ligneId);
 	}, []);
 
 	const handleFileSelected = useCallback(
@@ -385,30 +380,36 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 		async (ligne: LignePreparationResponse) => {
 			try {
 				await clearLigneVignette(order.id, ligne.id);
-				setLocalLignes((prev) =>
-					prev.map((l) =>
-						l.id === ligne.id
-							? {
-									...l,
-									vignette: null,
-									n_lot: null,
-									fab: null,
-									exp: null,
-									ppa: null,
-									verifie: false,
-								}
-							: l,
-					),
-				);
-				setWarningsByLine((prev) => {
-					const next = { ...prev };
-					delete next[ligne.id];
-					return next;
-				});
-				toast.success("Vignette retirée");
-			} catch {
-				toast.error("Erreur suppression vignette");
+			} catch (err) {
+				// Treat 404 as already-cleared (state was stale): no-op + silent.
+				const is404 = err instanceof Error && /404|not found/i.test(err.message);
+				if (!is404) {
+					toast.error("Erreur suppression vignette");
+					return;
+				}
 			}
+			setLocalLignes((prev) =>
+				prev.map((l) =>
+					l.id === ligne.id
+						? {
+								...l,
+								vignette: null,
+								n_lot: null,
+								fab: null,
+								exp: null,
+								ppa: null,
+								verifie: false,
+							}
+						: l,
+				),
+			);
+			setWarningsByLine((prev) => {
+				const next = { ...prev };
+				delete next[ligne.id];
+				return next;
+			});
+			setPreviewVignette(null);
+			toast.success("Vignette retirée");
 		},
 		[order.id, clearLigneVignette],
 	);
@@ -467,7 +468,32 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 				</Button>
 			</div>
 
-			<VignettePreviewModal vignette={previewVignette} onClose={() => setPreviewVignette(null)} />
+			<VignettePreviewModal
+				vignette={previewVignette}
+				onClose={() => setPreviewVignette(null)}
+				onRescan={() => {
+					const ligne = localLignes.find((l) => l.vignette?.id === previewVignette?.id);
+					if (ligne) {
+						setPreviewVignette(null);
+						setCaptureForLineId(ligne.id);
+					}
+				}}
+				onDelete={() => {
+					const ligne = localLignes.find((l) => l.vignette?.id === previewVignette?.id);
+					if (ligne) void handleClearVignette(ligne);
+				}}
+			/>
+
+			<VignetteCaptureDialog
+				open={captureForLineId !== null}
+				onOpenChange={(open) => {
+					if (!open) setCaptureForLineId(null);
+				}}
+				onCapture={(file) => {
+					const ligne = localLignes.find((l) => l.id === captureForLineId);
+					if (ligne) void handleFileSelected(ligne, file);
+				}}
+			/>
 
 			{order.caddie_pool && (
 				<div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
@@ -637,69 +663,25 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 										/>
 									</TableCell>
 									<TableCell className="text-center">
-										<input
-											ref={(el) => {
-												fileInputs.current[ligne.id] = el;
-											}}
-											type="file"
-											accept="image/jpeg,image/png,image/webp"
-											className="hidden"
-											onChange={(e) => {
-												const file = e.target.files?.[0];
-												if (file) {
-													void handleFileSelected(ligne, file);
-													e.target.value = "";
-												}
-											}}
-										/>
-										<input
-											ref={(el) => {
-												cameraInputs.current[ligne.id] = el;
-											}}
-											type="file"
-											accept="image/jpeg,image/png,image/webp"
-											capture="environment"
-											className="hidden"
-											onChange={(e) => {
-												const file = e.target.files?.[0];
-												if (file) {
-													void handleFileSelected(ligne, file);
-													e.target.value = "";
-												}
-											}}
-										/>
-										<div className="inline-flex items-center gap-1">
-											<Button
-												size="sm"
-												variant={ligne.vignette ? "secondary" : "outline"}
-												disabled={isScanning}
-												onClick={() => handleScanClick(ligne.id)}
-												className="h-7 gap-1 text-[11px]"
-											>
-												{isScanning ? (
-													<>
-														<Loader2 className="h-3 w-3 animate-spin" />
-														Analyse…
-													</>
-												) : (
-													<>
-														<ScanLine className="h-3 w-3" />
-														{ligne.vignette ? "Re-scan" : "Scanner"}
-													</>
-												)}
-											</Button>
-											<Button
-												size="sm"
-												variant="outline"
-												disabled={isScanning}
-												onClick={() => handleCameraClick(ligne.id)}
-												className="h-7 w-7 p-0"
-												title="Prendre une photo"
-												aria-label="Prendre une photo"
-											>
-												<Camera className="h-3.5 w-3.5" />
-											</Button>
-										</div>
+										<Button
+											size="sm"
+											variant={ligne.vignette ? "secondary" : "outline"}
+											disabled={isScanning}
+											onClick={() => handleScanClick(ligne.id)}
+											className="h-7 gap-1 text-[11px]"
+										>
+											{isScanning ? (
+												<>
+													<Loader2 className="h-3 w-3 animate-spin" />
+													Analyse…
+												</>
+											) : (
+												<>
+													<ScanLine className="h-3 w-3" />
+													{ligne.vignette ? "Re-scan" : "Scanner"}
+												</>
+											)}
+										</Button>
 									</TableCell>
 								</TableRow>
 							);
