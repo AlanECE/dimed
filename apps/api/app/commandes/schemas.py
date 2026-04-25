@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -26,8 +27,10 @@ class LigneResponse(BaseModel):
     qte_demandee: int
     prix_unitaire: float
     remise_pct: float = 0.0
-    n_lot: str | None
-    dlc: date | None = None
+    n_lot: str | None = None
+    fab: date | None = None
+    exp: date | None = None
+    ppa: Decimal | None = None
 
     model_config = {"from_attributes": True}
 
@@ -91,3 +94,59 @@ class AddLineRequest(BaseModel):
 
 class UpdateCommentRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=500)
+
+
+# ---- Per-ligne OCR (vignette scan) ----
+
+
+class VignetteResponse(BaseModel):
+    id: UUID
+    filename: str
+    file_url: str
+    extracted_lot: str | None = None
+    extracted_fab: date | None = None
+    extracted_exp: date | None = None
+    extracted_ppa: Decimal | None = None
+    extracted_designation: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class LigneUpdatePreparation(BaseModel):
+    qte_prelevee: int | None = Field(default=None, ge=0)
+    n_lot: str | None = Field(default=None, max_length=50)
+    fab: date | None = None
+    exp: date | None = None
+    ppa: Decimal | None = Field(default=None, max_digits=10, decimal_places=2)
+    verifie: bool | None = None
+
+
+class LignePreparationResponse(BaseModel):
+    id: UUID
+    medicament_id: UUID
+    designation: str
+    qte_demandee: int
+    qte_prelevee: int | None = None
+    prix_unitaire: Decimal
+    remise_pct: Decimal = Decimal("0.00")
+    n_lot: str | None = None
+    fab: date | None = None
+    exp: date | None = None
+    ppa: Decimal | None = None
+    medicament_ppa: Decimal | None = None  # catalogue PPA, used by frontend for divergence pill
+    verifie: bool
+    vignette: VignetteResponse | None = None
+
+
+class VignetteWarning(StrEnum):
+    PPA_DIVERGENT = "ppa_divergent"
+    MISSING_LOT = "missing_lot"
+    MISSING_FAB = "missing_fab"
+    MISSING_EXP = "missing_exp"
+    MISSING_PPA = "missing_ppa"
+
+
+class LigneOcrResponse(BaseModel):
+    ligne: LignePreparationResponse
+    vignette: VignetteResponse
+    warnings: list[VignetteWarning]
