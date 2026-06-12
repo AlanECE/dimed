@@ -57,11 +57,13 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
 	],
 	preparateur: [{ href: "/preparation", label: "Préparation", icon: Package }],
 	controleur: [{ href: "/verification", label: "Vérification", icon: CheckCircle }],
+	magasinier: [{ href: "/magasinier", label: "Pads de tir", icon: PackageCheck }],
 	livreur: [{ href: "/livraison", label: "Livraisons", icon: Truck }],
 	admin: [
 		{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 		{ href: "/preparation", label: "Préparation", icon: Package },
 		{ href: "/verification", label: "Vérification", icon: CheckCircle },
+		{ href: "/magasinier", label: "Pads de tir", icon: PackageCheck },
 		{ href: "/livraison", label: "Livraisons", icon: Truck },
 		{ href: "/dashboard/routes", label: "Feuilles de route", icon: Route },
 		{ href: "/dashboard/camions", label: "Lignes de route", icon: Route },
@@ -84,6 +86,7 @@ const ROLE_LABELS: Record<string, string> = {
 	operatrice: "Opératrice",
 	preparateur: "Préparateur",
 	controleur: "Contrôleur",
+	magasinier: "Magasinier",
 	livreur: "Livreur",
 	admin: "Administrateur",
 };

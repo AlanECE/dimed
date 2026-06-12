@@ -1,9 +1,9 @@
 "use client";
 
+import { QrScanner } from "@/components/qr-scanner";
 import { SignaturePad } from "@/components/signature-pad";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Dialog,
 	DialogContent,
@@ -13,9 +13,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useExpedition } from "@/hooks/use-expedition";
 import { useOrderAction } from "@/hooks/use-order-action";
 import { useTodayRoute } from "@/hooks/use-today-route";
-import type { RouteSheetTodayCommande } from "@/lib/types";
+import type { ChargementState, ColisManquants, RouteSheetTodayCommande } from "@/lib/types";
 import {
 	AlertTriangle,
 	CheckCircle2,
@@ -23,11 +24,13 @@ import {
 	Loader2,
 	MapPin,
 	Package,
+	PackageCheck,
 	PenLine,
+	ScanLine,
 	Truck,
 	XCircle,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
@@ -71,9 +74,11 @@ export default function LivraisonPage() {
 		"start-delivery",
 		refetch,
 	);
+	const { scanChargement, scanLivraison, fetchChargement } = useExpedition();
 
-	// Checklist state
-	const [checkedColis, setCheckedColis] = useState<Set<string>>(new Set());
+	// Per-parcel loading state (real-time truck content)
+	const [chargement, setChargement] = useState<ChargementState | null>(null);
+	const [manquants, setManquants] = useState<ColisManquants[] | null>(null);
 
 	// Signature dialogs
 	const [signDialog, setSignDialog] = useState<"expedition" | "chauffeur" | null>(null);
@@ -82,6 +87,7 @@ export default function LivraisonPage() {
 	const [failMotif, setFailMotif] = useState("");
 	const [failAction, setFailAction] = useState<"refuse" | "retourne">("refuse");
 	const [saving, setSaving] = useState(false);
+	const [scanning, setScanning] = useState(false);
 	const [claiming, setClaiming] = useState(false);
 
 	// Computed
@@ -101,32 +107,65 @@ export default function LivraisonPage() {
 		[feuille],
 	);
 
-	const allColisChecked =
-		pretesOrders.length > 0 && pretesOrders.every((o) => checkedColis.has(o.reference_id));
 	const canStartTournee =
 		feuille?.chargement_valide && feuille?.signature_expedition && feuille?.signature_chauffeur;
 
-	const toggleColis = useCallback((ref: string) => {
-		setCheckedColis((prev) => {
-			const next = new Set(prev);
-			if (next.has(ref)) next.delete(ref);
-			else next.add(ref);
-			return next;
-		});
-	}, []);
+	const refreshChargement = useCallback(async () => {
+		if (!feuille) return;
+		try {
+			setChargement(await fetchChargement(feuille.id));
+		} catch {
+			// l'état du camion est complémentaire — ne bloque pas la page
+		}
+	}, [feuille, fetchChargement]);
+
+	useEffect(() => {
+		refreshChargement();
+	}, [refreshChargement]);
+
+	const handleScanChargement = useCallback(
+		async (numero: string) => {
+			if (scanning) return;
+			setScanning(true);
+			try {
+				const res = await scanChargement(numero);
+				if (res.deja_scanne) {
+					toast.info(`${numero} déjà scanné (${res.charges}/${res.total})`);
+				} else if (res.commande_complete) {
+					toast.success(`Commande ${res.commande_ref} complète — ${res.charges}/${res.total}`);
+				} else {
+					toast.success(`${numero} chargé — ${res.commande_ref} : ${res.charges}/${res.total}`);
+				}
+				setManquants(null);
+				await refreshChargement();
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : "Colis non reconnu");
+			} finally {
+				setScanning(false);
+			}
+		},
+		[scanning, scanChargement, refreshChargement],
+	);
 
 	const handleValidateLoading = useCallback(async () => {
 		if (!feuille) return;
 		setSaving(true);
 		try {
-			await validateLoading(feuille.id, Array.from(checkedColis));
-			toast.success("Chargement validé");
+			const result = await validateLoading(feuille.id);
+			if (result.ok) {
+				setManquants(null);
+				toast.success("Chargement validé");
+			} else {
+				setManquants(result.manquants);
+				const nb = result.manquants.reduce((acc, m) => acc + m.colis.length, 0);
+				toast.warning(`${nb} colis manquant${nb > 1 ? "s" : ""} — voir la liste`);
+			}
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Erreur validation");
 		} finally {
 			setSaving(false);
 		}
-	}, [feuille, checkedColis, validateLoading]);
+	}, [feuille, validateLoading]);
 
 	const handleSign = useCallback(
 		async (base64: string) => {
@@ -174,6 +213,37 @@ export default function LivraisonPage() {
 			}
 		},
 		[deliverDialog, deliverWithSignature],
+	);
+
+	// Re-scan des colis à la réception (avant signature pharmacien)
+	const deliverColis = useMemo(() => {
+		if (!deliverDialog || !chargement) return [];
+		return chargement.commandes.find((c) => c.commande_id === deliverDialog.id)?.colis ?? [];
+	}, [deliverDialog, chargement]);
+	const allColisLivres =
+		deliverColis.length === 0 || deliverColis.every((c) => c.statut === "livre");
+
+	const handleScanLivraison = useCallback(
+		async (numero: string) => {
+			if (scanning || !deliverDialog) return;
+			setScanning(true);
+			try {
+				const res = await scanLivraison(numero);
+				if (res.commande_ref !== deliverDialog.reference_id) {
+					toast.warning(`${numero} appartient à la commande ${res.commande_ref}`);
+				} else if (res.deja_scanne) {
+					toast.info(`${numero} déjà scanné (${res.livres}/${res.total})`);
+				} else {
+					toast.success(`${numero} contrôlé — ${res.livres}/${res.total}`);
+				}
+				await refreshChargement();
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : "Colis non reconnu");
+			} finally {
+				setScanning(false);
+			}
+		},
+		[scanning, deliverDialog, scanLivraison, refreshChargement],
 	);
 
 	const handleFail = useCallback(async () => {
@@ -322,7 +392,7 @@ export default function LivraisonPage() {
 			</div>
 
 			{/* ============================================================= */}
-			{/* Phase 2: Checklist chargement (only if not yet validated) */}
+			{/* Phase 2: Chargement par scan des colis (only if not yet validated) */}
 			{/* ============================================================= */}
 			{!feuille.chargement_valide && pretesOrders.length > 0 && (
 				<section
@@ -330,51 +400,119 @@ export default function LivraisonPage() {
 					style={{ animationDelay: "100ms" }}
 				>
 					<div className="flex items-center gap-2.5">
-						<ClipboardCheck className="h-4 w-4 text-violet-600" />
-						<h3 className="text-[15px] font-semibold">Checklist de chargement</h3>
+						<ScanLine className="h-4 w-4 text-violet-600" />
+						<h3 className="text-[15px] font-semibold">Chargement du camion — scan des colis</h3>
 						<span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-violet-100 px-2 text-[11px] font-bold text-violet-700">
-							{checkedColis.size}/{pretesOrders.length}
+							{chargement?.charges ?? 0}/{chargement?.total ?? 0}
 						</span>
 					</div>
 
-					<div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
-						<div className="flex flex-col divide-y divide-border/30">
-							{pretesOrders.map((order) => (
-								<label
-									key={order.id}
-									className="flex cursor-pointer items-center gap-4 px-5 py-3.5 transition-colors hover:bg-muted/40"
-								>
-									<Checkbox
-										checked={checkedColis.has(order.reference_id)}
-										onCheckedChange={() => toggleColis(order.reference_id)}
-									/>
-									<div className="flex-1">
-										<span className="font-mono text-[13px] font-medium">{order.reference_id}</span>
-										<span className="ml-3 text-[13px] text-muted-foreground">
-											{order.pharmacien_nom}
-										</span>
-									</div>
-									<span className="text-[13px] font-semibold tabular-nums">
-										{order.montant_total.toLocaleString("fr-FR")} DA
-									</span>
-								</label>
-							))}
-						</div>
-						<div className="flex items-center justify-end border-t border-border/40 bg-muted/20 px-5 py-3">
-							<Button
-								size="sm"
-								onClick={handleValidateLoading}
-								disabled={!allColisChecked || saving}
-								className="gap-1.5 rounded-lg bg-gradient-to-r from-[#0F766E] to-[#0D9488] text-[12px] font-semibold text-white shadow-sm hover:brightness-110"
-							>
-								{saving ? (
-									<Loader2 className="h-3.5 w-3.5 animate-spin" />
-								) : (
-									<CheckCircle2 className="h-3.5 w-3.5" />
+					<div className="grid gap-4 lg:grid-cols-2">
+						<QrScanner onScan={handleScanChargement} paused={scanning} />
+
+						{/* Contenu du camion en temps réel */}
+						<div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
+							<div className="flex items-center gap-2 border-b border-border/40 bg-muted/20 px-4 py-2.5">
+								<PackageCheck className="h-4 w-4 text-teal-600" />
+								<span className="text-[13px] font-semibold">Contenu du camion</span>
+							</div>
+							<div className="flex max-h-80 flex-col divide-y divide-border/30 overflow-y-auto">
+								{(chargement?.commandes ?? [])
+									.filter((c) => c.statut === "prete")
+									.map((order) => (
+										<div key={order.commande_id} className="px-4 py-2.5">
+											<div className="flex items-center justify-between">
+												<div>
+													<span className="font-mono text-[12px] font-medium">
+														{order.commande_ref}
+													</span>
+													<span className="ml-2 text-[12px] text-muted-foreground">
+														{order.pharmacien_nom}
+													</span>
+												</div>
+												<span
+													className={`text-[12px] font-bold tabular-nums ${
+														order.total > 0 && order.charges === order.total
+															? "text-emerald-600"
+															: "text-amber-600"
+													}`}
+												>
+													{order.charges}/{order.total}
+												</span>
+											</div>
+											{order.colis.length > 0 && (
+												<div className="mt-1.5 flex flex-wrap gap-1">
+													{order.colis.map((k) => (
+														<span
+															key={k.numero}
+															className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-medium ${
+																k.statut === "charge" || k.statut === "livre"
+																	? "bg-emerald-100 text-emerald-700"
+																	: "bg-muted text-muted-foreground"
+															}`}
+														>
+															{k.numero}
+														</span>
+													))}
+												</div>
+											)}
+											{order.colis.length === 0 && (
+												<p className="mt-1 text-[11px] text-muted-foreground/70">
+													Pas de colis tracés (commande antérieure)
+												</p>
+											)}
+										</div>
+									))}
+								{(chargement?.commandes.filter((c) => c.statut === "prete") ?? []).length === 0 && (
+									<p className="px-4 py-6 text-center text-[12px] text-muted-foreground">
+										Aucune commande prête à charger
+									</p>
 								)}
-								Valider le chargement
-							</Button>
+							</div>
 						</div>
+					</div>
+
+					{/* Colis manquants après tentative de validation */}
+					{manquants && manquants.length > 0 && (
+						<div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
+							<div className="flex items-center gap-2">
+								<AlertTriangle className="h-4 w-4 text-red-600" />
+								<p className="text-[13px] font-semibold text-red-700">
+									Colis manquants — le camion ne peut pas être validé
+								</p>
+							</div>
+							<ul className="mt-2 flex flex-col gap-1.5">
+								{manquants.map((m) => (
+									<li key={m.commande_ref} className="text-[13px] text-red-700">
+										<span className="font-mono font-semibold">{m.commande_ref}</span> :{" "}
+										{m.colis.map((numero) => (
+											<span
+												key={numero}
+												className="mr-1 rounded-md bg-red-100 px-1.5 py-0.5 font-mono text-[11px] font-medium"
+											>
+												{numero}
+											</span>
+										))}
+									</li>
+								))}
+							</ul>
+						</div>
+					)}
+
+					<div className="flex items-center justify-end">
+						<Button
+							size="sm"
+							onClick={handleValidateLoading}
+							disabled={saving}
+							className="gap-1.5 rounded-lg bg-gradient-to-r from-[#0F766E] to-[#0D9488] text-[12px] font-semibold text-white shadow-sm hover:brightness-110"
+						>
+							{saving ? (
+								<Loader2 className="h-3.5 w-3.5 animate-spin" />
+							) : (
+								<CheckCircle2 className="h-3.5 w-3.5" />
+							)}
+							Valider le chargement
+						</Button>
 					</div>
 				</section>
 			)}
@@ -615,21 +753,52 @@ export default function LivraisonPage() {
 				</DialogContent>
 			</Dialog>
 
-			{/* Deliver with pharmacist signature dialog */}
+			{/* Deliver dialog: re-scan des colis puis signature pharmacien */}
 			<Dialog open={deliverDialog !== null} onOpenChange={() => setDeliverDialog(null)}>
-				<DialogContent className="sm:max-w-md">
+				<DialogContent className="sm:max-w-lg">
 					<DialogHeader>
-						<DialogTitle>Signature du pharmacien</DialogTitle>
+						<DialogTitle>
+							{allColisLivres ? "Signature du pharmacien" : "Contrôle des colis à la réception"}
+						</DialogTitle>
 						<DialogDescription>
 							{deliverDialog?.pharmacien_nom} — {deliverDialog?.reference_id}
 						</DialogDescription>
 					</DialogHeader>
-					<SignaturePad
-						label="Signature pharmacien (réception)"
-						onSave={handleDeliver}
-						onCancel={() => setDeliverDialog(null)}
-						saving={saving}
-					/>
+
+					{deliverColis.length > 0 && (
+						<div className="flex flex-wrap gap-1.5">
+							{deliverColis.map((k) => (
+								<span
+									key={k.numero}
+									className={`flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium ${
+										k.statut === "livre"
+											? "bg-emerald-100 text-emerald-700"
+											: "bg-muted text-muted-foreground"
+									}`}
+								>
+									{k.statut === "livre" && <CheckCircle2 className="h-3 w-3" />}
+									{k.numero}
+								</span>
+							))}
+						</div>
+					)}
+
+					{!allColisLivres ? (
+						<div className="flex flex-col gap-2">
+							<p className="text-[12px] text-muted-foreground">
+								Re-scannez chaque colis remis au pharmacien — la signature se débloque quand tous
+								les colis sont contrôlés.
+							</p>
+							<QrScanner onScan={handleScanLivraison} paused={scanning} />
+						</div>
+					) : (
+						<SignaturePad
+							label="Signature pharmacien (réception)"
+							onSave={handleDeliver}
+							onCancel={() => setDeliverDialog(null)}
+							saving={saving}
+						/>
+					)}
 				</DialogContent>
 			</Dialog>
 

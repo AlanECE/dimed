@@ -19,6 +19,7 @@ export default function Home() {
 			admin: "/dashboard",
 			preparateur: "/preparation",
 			controleur: "/verification",
+			magasinier: "/magasinier",
 			livreur: "/livraison",
 		};
 		router.push(routes[user.role] || "/catalogue");

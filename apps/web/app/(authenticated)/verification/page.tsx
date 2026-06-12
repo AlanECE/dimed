@@ -20,6 +20,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { useCamions } from "@/hooks/use-camions";
+import { useExpedition } from "@/hooks/use-expedition";
 import { useOrders } from "@/hooks/use-orders";
 import { usePreparation } from "@/hooks/use-preparation";
 import { fetchApi } from "@/lib/api";
@@ -29,6 +30,8 @@ import {
 	CheckCircle,
 	FileDown,
 	Loader2,
+	Package,
+	QrCode,
 	Route,
 	ShieldCheck,
 	XCircle,
@@ -53,6 +56,18 @@ export default function VerificationPage() {
 function VerificationList({ onSelect }: { onSelect: (o: OrderResponse) => void }) {
 	const { orders: enVerif, loading: loadingVerif } = useOrders({ statut: "en_verification" });
 	const { orders: pretes, loading: loadingPretes } = useOrders({ statut: "prete" });
+	const { downloadEtiquettes } = useExpedition();
+
+	const handleEtiquettes = useCallback(
+		async (order: OrderResponse) => {
+			try {
+				await downloadEtiquettes(order.id, order.reference_id);
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : "Erreur téléchargement étiquettes");
+			}
+		},
+		[downloadEtiquettes],
+	);
 
 	return (
 		<div className="flex flex-col gap-8">
@@ -168,13 +183,16 @@ function VerificationList({ onSelect }: { onSelect: (o: OrderResponse) => void }
 								<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 									Statut
 								</TableHead>
+								<TableHead className="text-right text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+									Étiquettes
+								</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{loadingPretes ? (
 								Array.from({ length: 2 }).map((_, i) => (
 									<TableRow key={`skp-${i}`} className="border-border/30">
-										{Array.from({ length: 4 }).map((_, j) => (
+										{Array.from({ length: 5 }).map((_, j) => (
 											<TableCell key={`skp-${i}-${j}`}>
 												<Skeleton className="h-4 w-full" />
 											</TableCell>
@@ -184,7 +202,7 @@ function VerificationList({ onSelect }: { onSelect: (o: OrderResponse) => void }
 							) : pretes.length === 0 ? (
 								<TableRow>
 									<TableCell
-										colSpan={4}
+										colSpan={5}
 										className="py-8 text-center text-[13px] text-muted-foreground"
 									>
 										Aucune commande prête
@@ -203,6 +221,17 @@ function VerificationList({ onSelect }: { onSelect: (o: OrderResponse) => void }
 										</TableCell>
 										<TableCell>
 											<StatusBadge status={order.statut} />
+										</TableCell>
+										<TableCell className="text-right">
+											<Button
+												variant="outline"
+												size="sm"
+												onClick={() => handleEtiquettes(order)}
+												className="h-8 gap-1.5 rounded-lg text-[12px]"
+											>
+												<QrCode className="h-3.5 w-3.5" />
+												Étiquettes PDF
+											</Button>
 										</TableCell>
 									</TableRow>
 								))
@@ -225,6 +254,7 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 	const { camions } = useCamions();
 	const [saving, setSaving] = useState(false);
 	const [selectedLigne, setSelectedLigne] = useState(order.camion_id ?? "");
+	const [nbColis, setNbColis] = useState<number | null>(null);
 
 	// Controller's blind counts + per-line check status
 	const [controlCounts, setControlCounts] = useState<Record<string, number | null>>({});
@@ -282,7 +312,7 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 	}, [lineStatus]);
 
 	const handleValidate = useCallback(async () => {
-		if (!detail || !selectedLigne.length) return;
+		if (!detail || !selectedLigne.length || !nbColis || nbColis < 1) return;
 		setSaving(true);
 		try {
 			for (const l of detail.lignes) {
@@ -294,15 +324,26 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 				method: "PATCH",
 				body: JSON.stringify({ camion_id: selectedLigne }),
 			});
-			await validateControl(order.id);
-			toast.success("Commande validée → Prête");
+			await validateControl(order.id, nbColis);
+			toast.success(
+				`Commande validée → Prête — ${nbColis} colis créé${nbColis > 1 ? "s" : ""} (étiquettes disponibles)`,
+			);
 			onBack();
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Erreur");
 		} finally {
 			setSaving(false);
 		}
-	}, [order.id, detail, controlCounts, selectedLigne, updateLigne, validateControl, onBack]);
+	}, [
+		order.id,
+		detail,
+		controlCounts,
+		selectedLigne,
+		nbColis,
+		updateLigne,
+		validateControl,
+		onBack,
+	]);
 
 	if (loading || !detail) {
 		return (
@@ -442,7 +483,7 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 			</div>
 
 			<div className="flex items-center justify-between rounded-xl border border-border/60 bg-card px-5 py-4 shadow-sm">
-				<div className="flex items-center gap-3">
+				<div className="flex flex-wrap items-center gap-3">
 					<Route className="h-4 w-4 text-muted-foreground" />
 					<span className="text-[13px] font-medium">Ligne de route</span>
 					<Select value={selectedLigne} onValueChange={(value) => setSelectedLigne(value ?? "")}>
@@ -457,10 +498,27 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 							))}
 						</SelectContent>
 					</Select>
+					<Package className="ml-2 h-4 w-4 text-muted-foreground" />
+					<label htmlFor="nb-colis" className="text-[13px] font-medium">
+						Nombre de colis
+					</label>
+					<Input
+						id="nb-colis"
+						type="number"
+						min={1}
+						max={500}
+						value={nbColis ?? ""}
+						onChange={(e) => {
+							const v = Number.parseInt(e.target.value, 10);
+							setNbColis(Number.isNaN(v) ? null : v);
+						}}
+						placeholder="—"
+						className="h-9 w-20 text-center text-[13px] tabular-nums"
+					/>
 				</div>
 				<Button
 					onClick={handleValidate}
-					disabled={saving || !allChecked || !selectedLigne.length}
+					disabled={saving || !allChecked || !selectedLigne.length || !nbColis || nbColis < 1}
 					className="gap-1.5 rounded-lg bg-gradient-to-r from-[#0F766E] to-[#0D9488] text-[13px] font-semibold text-white shadow-sm hover:brightness-110"
 				>
 					{saving ? (

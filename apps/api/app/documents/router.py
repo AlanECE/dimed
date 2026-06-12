@@ -535,17 +535,23 @@ async def sign_route_sheet(
 
 
 class ValidateLoadingRequest(BaseModel):
-    colis_checked: list[str] = Field(description="List of checked order reference IDs")
+    # Legacy field kept for backward compatibility — loading is now verified
+    # against per-parcel scans (colis CHARGE), not a manual checklist.
+    colis_checked: list[str] = Field(default_factory=list)
 
 
 @router.patch("/feuilles-route/{feuille_id}/validate-loading")
 async def validate_loading(
     feuille_id: UUID,
-    body: ValidateLoadingRequest,
     current_user: CurrentUser,
+    body: ValidateLoadingRequest | None = None,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> dict:
-    """Validate loading checklist for a route sheet."""
+    """Validate truck loading: every parcel of every ready order must be scanned.
+
+    Returns ok=false with the explicit list of missing parcels instead of
+    validating, so the livreur knows exactly which colis to find.
+    """
     if current_user.role.value not in ("livreur", "operatrice", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
@@ -554,25 +560,52 @@ async def validate_loading(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Route sheet not found")
     _require_route_sheet_access(current_user, feuille)
 
-    # Verify all ready orders linked to this route sheet are checked.
     commandes = await get_route_sheet_orders(
         db,
         feuille,
         statuses=[OrderStatus.PRETE],
     )
-    order_refs = {c.reference_id for c in commandes}
 
-    if not order_refs.issubset(set(body.colis_checked)):
-        missing = order_refs - set(body.colis_checked)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Missing colis: {', '.join(missing)}",
+    from app.models.colis import Colis, ColisStatus
+
+    manquants: list[dict] = []
+    if commandes:
+        colis_result = await db.execute(
+            select(Colis)
+            .where(Colis.commande_id.in_([c.id for c in commandes]))
+            .order_by(Colis.index_colis.asc())
         )
+        colis_map: dict[UUID, list[Colis]] = {}
+        for colis in colis_result.scalars().all():
+            colis_map.setdefault(colis.commande_id, []).append(colis)
+
+        for c in commandes:
+            # Orders created before parcel tracking have no colis — skip them.
+            missing_colis = [
+                k.numero
+                for k in colis_map.get(c.id, [])
+                if k.statut not in (ColisStatus.CHARGE, ColisStatus.LIVRE)
+            ]
+            if missing_colis:
+                manquants.append(
+                    {
+                        "commande_ref": c.reference_id,
+                        "colis": missing_colis,
+                    }
+                )
+
+    if manquants:
+        return {
+            "status": "incomplete",
+            "ok": False,
+            "chargement_valide": False,
+            "manquants": manquants,
+        }
 
     db.info["actor_id"] = str(current_user.id)
     feuille.chargement_valide = True
     await db.commit()
-    return {"status": "ok", "chargement_valide": True}
+    return {"status": "ok", "ok": True, "chargement_valide": True, "manquants": []}
 
 
 @router.get("/feuilles-route/{feuille_id}/pdf")
