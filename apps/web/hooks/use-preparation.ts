@@ -56,9 +56,10 @@ export function usePreparation() {
 		});
 	}, []);
 
-	const validateControl = useCallback(async (commandeId: string) => {
+	const validateControl = useCallback(async (commandeId: string, nbColis: number) => {
 		await fetchApi(`/commandes/${commandeId}/validate-control`, {
 			method: "PATCH",
+			body: JSON.stringify({ nb_colis: nbColis }),
 		});
 	}, []);
 

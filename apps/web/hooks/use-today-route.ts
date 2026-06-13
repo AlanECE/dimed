@@ -1,7 +1,7 @@
 "use client";
 
 import { fetchApi } from "@/lib/api";
-import type { RouteSheetToday } from "@/lib/types";
+import type { RouteSheetToday, ValidateLoadingResult } from "@/lib/types";
 import { useCallback, useEffect, useState } from "react";
 
 export function useTodayRoute() {
@@ -30,12 +30,18 @@ export function useTodayRoute() {
 	}, [fetch]);
 
 	const validateLoading = useCallback(
-		async (feuilleId: string, colisChecked: string[]) => {
-			await fetchApi(`/documents/feuilles-route/${feuilleId}/validate-loading`, {
-				method: "PATCH",
-				body: JSON.stringify({ colis_checked: colisChecked }),
-			});
-			await fetch();
+		async (feuilleId: string): Promise<ValidateLoadingResult> => {
+			// La validation se fait désormais sur les scans par colis côté serveur :
+			// ok=false renvoie la liste explicite des colis manquants.
+			const result = await fetchApi<ValidateLoadingResult>(
+				`/documents/feuilles-route/${feuilleId}/validate-loading`,
+				{
+					method: "PATCH",
+					body: JSON.stringify({}),
+				},
+			);
+			if (result.ok) await fetch();
+			return result;
 		},
 		[fetch],
 	);

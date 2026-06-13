@@ -8,12 +8,13 @@ from barcode.writer import ImageWriter
 from num2words import num2words
 from reportlab.graphics.shapes import Circle, Drawing, String
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4, A6, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm, mm
 from reportlab.platypus import (
     Image,
     KeepTogether,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -1343,6 +1344,141 @@ def generate_liste_prelevement_pdf(
             styles["Normal"],
         )
     )
+
+    doc.build(elems)
+    return output_path
+
+
+def generate_etiquettes_pdf(
+    commande_ref: str,
+    client_nom: str,
+    client_adresse: str | None,
+    client_secteur: str | None,
+    date_str: str,
+    colis: list[dict],
+) -> Path:
+    """Generate parcel labels PDF: one A6 landscape page per parcel.
+
+    Each label carries a QR code encoding ONLY the parcel's unique numero —
+    the scan looks the rest up through the API. The human-readable side shows
+    the numero, "Colis X/N", order ref, destination pharmacist and contents.
+
+    colis items: {numero, index, total, contenu: list[str], contenu_detaille: bool}
+    """
+    output_path = STORAGE_ROOT / "etiquettes" / f"etiquettes_{commande_ref}.pdf"
+    _ensure_dir(output_path)
+
+    page_size = landscape(A6)
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=page_size,
+        leftMargin=0.5 * cm,
+        rightMargin=0.5 * cm,
+        topMargin=0.4 * cm,
+        bottomMargin=0.4 * cm,
+    )
+    styles = getSampleStyleSheet()
+
+    numero_style = ParagraphStyle(
+        "EtiqNumero",
+        parent=styles["Normal"],
+        fontName="Courier-Bold",
+        fontSize=14,
+        leading=16,
+        textColor=colors.black,
+    )
+    position_style = ParagraphStyle(
+        "EtiqPosition",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=20,
+        leading=22,
+        textColor=DIMED_BLUE,
+    )
+    label_style = ParagraphStyle(
+        "EtiqLabel",
+        parent=styles["Normal"],
+        fontSize=8,
+        leading=10,
+        textColor=colors.grey,
+    )
+    value_style = ParagraphStyle(
+        "EtiqValue",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=11,
+        textColor=colors.black,
+    )
+    contenu_style = ParagraphStyle(
+        "EtiqContenu",
+        parent=styles["Normal"],
+        fontSize=7,
+        leading=9,
+        textColor=colors.black,
+    )
+
+    elems: list = []
+    max_contenu_lines = 6
+
+    for i, item in enumerate(colis):
+        if i > 0:
+            elems.append(PageBreak())
+
+        qr_img = _make_qr_image(item["numero"], 3.8)
+
+        contenu_lines = item.get("contenu") or []
+        shown = contenu_lines[:max_contenu_lines]
+        extra = len(contenu_lines) - len(shown)
+        contenu_title = "Contenu" if item.get("contenu_detaille") else "Contenu (commande complète)"
+        if not contenu_lines:
+            contenu_flow = [Paragraph("Contenu non détaillé", contenu_style)]
+        else:
+            contenu_flow = [Paragraph(f"• {line}", contenu_style) for line in shown]
+            if extra > 0:
+                contenu_flow.append(Paragraph(f"+ {extra} autres articles", contenu_style))
+
+        left_cell = [
+            Paragraph("DIMED — Étiquette colis", label_style),
+            Spacer(1, 1 * mm),
+            Paragraph(item["numero"], numero_style),
+            Paragraph(f"Colis {item['index']} / {item['total']}", position_style),
+            Spacer(1, 1.5 * mm),
+            Paragraph(f"Commande : <b>{commande_ref}</b> — {date_str}", value_style),
+            Paragraph(f"Destinataire : <b>{client_nom}</b>", value_style),
+        ]
+        if client_adresse:
+            left_cell.append(Paragraph(client_adresse, value_style))
+        if client_secteur:
+            left_cell.append(Paragraph(f"Secteur : {client_secteur}", value_style))
+        left_cell.append(Spacer(1, 1.5 * mm))
+        left_cell.append(Paragraph(contenu_title, label_style))
+        left_cell.extend(contenu_flow)
+
+        right_cell = [
+            qr_img,
+            Paragraph(
+                f"<para align='center' fontSize='7'>{item['numero']}</para>",
+                styles["Normal"],
+            ),
+        ]
+
+        layout = Table(
+            [[left_cell, right_cell]],
+            colWidths=[9.2 * cm, 4.3 * cm],
+        )
+        layout.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("BOX", (0, 0), (-1, -1), 1, colors.black),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        elems.append(layout)
 
     doc.build(elems)
     return output_path

@@ -1546,13 +1546,18 @@ async def finalize_preparation(
     )
 
 
+class ValidateControlRequest(BaseModel):
+    nb_colis: int = Field(ge=1, le=500, description="Nombre de colis constitués au contrôle")
+
+
 @router.patch("/{commande_id}/validate-control")
 async def validate_control(
     commande_id: UUID,
+    body: ValidateControlRequest,
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> OrderDetailResponse:
-    """Controller validates order → PRETE."""
+    """Controller validates order → PRETE, sets nb_colis and creates tracked parcels."""
     if current_user.role.value not in (
         "controleur",
         "operatrice",
@@ -1604,6 +1609,12 @@ async def validate_control(
         OrderStatus.PRETE,
     )
     commande.visa_controleur = current_user.nom
+    commande.nb_colis = body.nb_colis
+
+    from app.expedition.service import create_colis_for_commande
+
+    await create_colis_for_commande(db, commande, body.nb_colis)
+
     await db.commit()
     await db.refresh(commande, ["lignes"])
 

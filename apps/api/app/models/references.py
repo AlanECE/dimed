@@ -23,3 +23,7 @@ async def next_bl_ref(db: AsyncSession) -> str:
 
 async def next_prelevement_ref(db: AsyncSession) -> str:
     return await next_reference(db, "P", "prelevement_seq")
+
+
+async def next_colis_ref(db: AsyncSession) -> str:
+    return await next_reference(db, "CLS", "colis_seq")

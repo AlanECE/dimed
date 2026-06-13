@@ -331,3 +331,108 @@ export type RouteSheetToday = {
 	signature_chauffeur: boolean;
 	commandes: RouteSheetTodayCommande[];
 };
+
+// ---------------------------------------------------------------------------
+// Expedition (colis, pads de tir, scans)
+// ---------------------------------------------------------------------------
+
+export type PadTir = {
+	id: string;
+	code: string;
+	nom: string;
+	actif: boolean;
+};
+
+export type ColisContenuItem = {
+	designation: string;
+	quantite: number;
+};
+
+export type ColisDetail = {
+	id: string;
+	numero: string;
+	statut: "etiquete" | "sur_pad" | "charge" | "livre";
+	index_colis: number;
+	nb_colis: number;
+	commande_id: string;
+	commande_ref: string;
+	commande_statut: string;
+	date_commande: string;
+	pharmacien_nom: string;
+	pharmacien_adresse: string | null;
+	pharmacien_secteur: string | null;
+	pad: PadTir | null;
+	pad_suggere: PadTir | null;
+	pad_impose: boolean;
+	contenu: ColisContenuItem[];
+	contenu_detaille: boolean;
+};
+
+export type ScanChargementResult = {
+	numero: string;
+	commande_ref: string;
+	charges: number;
+	total: number;
+	commande_complete: boolean;
+	deja_scanne: boolean;
+};
+
+export type ScanLivraisonResult = {
+	numero: string;
+	commande_ref: string;
+	livres: number;
+	total: number;
+	commande_complete: boolean;
+	deja_scanne: boolean;
+};
+
+export type ChargementColisItem = {
+	numero: string;
+	index_colis: number;
+	statut: string;
+};
+
+export type ChargementCommandeState = {
+	commande_id: string;
+	commande_ref: string;
+	pharmacien_nom: string;
+	statut: string;
+	total: number;
+	charges: number;
+	colis: ChargementColisItem[];
+};
+
+export type ChargementState = {
+	feuille_id: string;
+	total: number;
+	charges: number;
+	commandes: ChargementCommandeState[];
+};
+
+export type ColisManquants = {
+	commande_ref: string;
+	colis: string[];
+};
+
+export type ValidateLoadingResult = {
+	status: string;
+	ok: boolean;
+	chargement_valide: boolean;
+	manquants: ColisManquants[];
+};
+
+export type PadOccupationCommande = {
+	commande_ref: string;
+	pharmacien_nom: string;
+	poses: number;
+	total: number;
+};
+
+export type PadOccupation = {
+	id: string;
+	code: string;
+	nom: string;
+	actif: boolean;
+	nb_colis: number;
+	commandes: PadOccupationCommande[];
+};
