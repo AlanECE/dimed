@@ -155,7 +155,7 @@ export function OperatorOrderTable({ defaultStatus }: OperatorOrderTableProps) {
 								[
 									["reference_id", "Référence"],
 									["pharmacien_nom", "Pharmacien"],
-									["created_at", "Date"],
+									["created_at", "Date & heure"],
 									["montant_total", "Montant"],
 									["statut", "Statut"],
 								] as [SortKey, string][]
@@ -205,8 +205,14 @@ export function OperatorOrderTable({ defaultStatus }: OperatorOrderTableProps) {
 								>
 									<TableCell className="font-mono text-[13px]">{order.reference_id}</TableCell>
 									<TableCell className="text-[13px]">{order.pharmacien_nom ?? "—"}</TableCell>
-									<TableCell className="text-[13px] text-muted-foreground">
-										{new Date(order.created_at).toLocaleDateString("fr-FR")}
+									<TableCell className="text-[13px] text-muted-foreground tabular-nums">
+										{new Date(order.created_at).toLocaleString("fr-FR", {
+											day: "2-digit",
+											month: "2-digit",
+											year: "numeric",
+											hour: "2-digit",
+											minute: "2-digit",
+										})}
 									</TableCell>
 									<TableCell className="text-right text-[13px] font-semibold tabular-nums">
 										{order.montant_total.toLocaleString("fr-FR")} DA

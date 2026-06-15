@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict IDaQupgWiqwdry0Vlpqz4AqxJ8DzfeC4iqaYmOsDx5n4aBUz30wgM1Ik8o05kyF
+\restrict DwISst4P4d9m0SaV0cEJgkOKbioLDT0pIlGTMl0Nli1XG2p6CkuifjjhBbSV4mx
 
 -- Dumped from database version 16.13 (Debian 16.13-1.pgdg12+1)
 -- Dumped by pg_dump version 16.13 (Debian 16.13-1.pgdg12+1)
@@ -33,6 +33,34 @@ COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching
 
 
 --
+-- Name: colisstatus; Type: TYPE; Schema: public; Owner: dimed
+--
+
+CREATE TYPE public.colisstatus AS ENUM (
+    'etiquete',
+    'sur_pad',
+    'charge',
+    'livre'
+);
+
+
+ALTER TYPE public.colisstatus OWNER TO dimed;
+
+--
+-- Name: creancestatut; Type: TYPE; Schema: public; Owner: dimed
+--
+
+CREATE TYPE public.creancestatut AS ENUM (
+    'en_attente',
+    'partiel',
+    'soldee',
+    'en_retard'
+);
+
+
+ALTER TYPE public.creancestatut OWNER TO dimed;
+
+--
 -- Name: orderstatus; Type: TYPE; Schema: public; Owner: dimed
 --
 
@@ -55,6 +83,48 @@ CREATE TYPE public.orderstatus AS ENUM (
 ALTER TYPE public.orderstatus OWNER TO dimed;
 
 --
+-- Name: reclamationmotif; Type: TYPE; Schema: public; Owner: dimed
+--
+
+CREATE TYPE public.reclamationmotif AS ENUM (
+    'produit_endommage',
+    'produit_manquant',
+    'erreur_facturation',
+    'erreur_produit',
+    'autre'
+);
+
+
+ALTER TYPE public.reclamationmotif OWNER TO dimed;
+
+--
+-- Name: reclamationstatut; Type: TYPE; Schema: public; Owner: dimed
+--
+
+CREATE TYPE public.reclamationstatut AS ENUM (
+    'ouverte',
+    'en_cours',
+    'resolue',
+    'rejetee'
+);
+
+
+ALTER TYPE public.reclamationstatut OWNER TO dimed;
+
+--
+-- Name: scantype; Type: TYPE; Schema: public; Owner: dimed
+--
+
+CREATE TYPE public.scantype AS ENUM (
+    'depot_pad',
+    'chargement',
+    'livraison'
+);
+
+
+ALTER TYPE public.scantype OWNER TO dimed;
+
+--
 -- Name: userrole; Type: TYPE; Schema: public; Owner: dimed
 --
 
@@ -64,7 +134,9 @@ CREATE TYPE public.userrole AS ENUM (
     'operatrice',
     'preparateur',
     'controleur',
-    'livreur'
+    'livreur',
+    'magasinier',
+    'facturier'
 );
 
 
@@ -207,6 +279,56 @@ CREATE TABLE public.camions (
 ALTER TABLE public.camions OWNER TO dimed;
 
 --
+-- Name: colis; Type: TABLE; Schema: public; Owner: dimed
+--
+
+CREATE TABLE public.colis (
+    id uuid NOT NULL,
+    numero character varying(20) NOT NULL,
+    commande_id uuid NOT NULL,
+    index_colis integer NOT NULL,
+    statut public.colisstatus DEFAULT 'etiquete'::public.colisstatus NOT NULL,
+    pad_tir_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid
+);
+
+
+ALTER TABLE public.colis OWNER TO dimed;
+
+--
+-- Name: colis_lignes; Type: TABLE; Schema: public; Owner: dimed
+--
+
+CREATE TABLE public.colis_lignes (
+    id uuid NOT NULL,
+    colis_id uuid NOT NULL,
+    ligne_commande_id uuid NOT NULL,
+    quantite integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid
+);
+
+
+ALTER TABLE public.colis_lignes OWNER TO dimed;
+
+--
+-- Name: colis_seq; Type: SEQUENCE; Schema: public; Owner: dimed
+--
+
+CREATE SEQUENCE public.colis_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.colis_seq OWNER TO dimed;
+
+--
 -- Name: commande_seq; Type: SEQUENCE; Schema: public; Owner: dimed
 --
 
@@ -249,6 +371,26 @@ CREATE TABLE public.commandes (
 
 
 ALTER TABLE public.commandes OWNER TO dimed;
+
+--
+-- Name: creances; Type: TABLE; Schema: public; Owner: dimed
+--
+
+CREATE TABLE public.creances (
+    id uuid NOT NULL,
+    pharmacien_id uuid NOT NULL,
+    facture_id uuid NOT NULL,
+    montant_total numeric(12,2) NOT NULL,
+    montant_paye numeric(12,2) DEFAULT 0 NOT NULL,
+    statut public.creancestatut DEFAULT 'en_attente'::public.creancestatut NOT NULL,
+    echeance date NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid
+);
+
+
+ALTER TABLE public.creances OWNER TO dimed;
 
 --
 -- Name: facture_seq; Type: SEQUENCE; Schema: public; Owner: dimed
@@ -324,7 +466,9 @@ CREATE TABLE public.lignes_commande (
     qte_prelevee integer,
     verifie boolean DEFAULT false NOT NULL,
     remise_pct numeric(5,2) DEFAULT 0 NOT NULL,
-    ocr_verifie boolean DEFAULT false NOT NULL
+    fab date,
+    exp date,
+    ppa numeric(10,2)
 );
 
 
@@ -372,6 +516,23 @@ CREATE TABLE public.notifications (
 ALTER TABLE public.notifications OWNER TO dimed;
 
 --
+-- Name: pads_tir; Type: TABLE; Schema: public; Owner: dimed
+--
+
+CREATE TABLE public.pads_tir (
+    id uuid NOT NULL,
+    code character varying(20) NOT NULL,
+    nom character varying(100) NOT NULL,
+    actif boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid
+);
+
+
+ALTER TABLE public.pads_tir OWNER TO dimed;
+
+--
 -- Name: prelevement_seq; Type: SEQUENCE; Schema: public; Owner: dimed
 --
 
@@ -384,6 +545,44 @@ CREATE SEQUENCE public.prelevement_seq
 
 
 ALTER SEQUENCE public.prelevement_seq OWNER TO dimed;
+
+--
+-- Name: reclamations; Type: TABLE; Schema: public; Owner: dimed
+--
+
+CREATE TABLE public.reclamations (
+    id uuid NOT NULL,
+    pharmacien_id uuid NOT NULL,
+    commande_id uuid NOT NULL,
+    motif public.reclamationmotif NOT NULL,
+    description text NOT NULL,
+    statut public.reclamationstatut DEFAULT 'ouverte'::public.reclamationstatut NOT NULL,
+    resolution text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid
+);
+
+
+ALTER TABLE public.reclamations OWNER TO dimed;
+
+--
+-- Name: scans_colis; Type: TABLE; Schema: public; Owner: dimed
+--
+
+CREATE TABLE public.scans_colis (
+    id uuid NOT NULL,
+    colis_id uuid NOT NULL,
+    type_scan public.scantype NOT NULL,
+    user_id uuid NOT NULL,
+    pad_tir_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid
+);
+
+
+ALTER TABLE public.scans_colis OWNER TO dimed;
 
 --
 -- Name: users; Type: TABLE; Schema: public; Owner: dimed
@@ -411,11 +610,35 @@ CREATE TABLE public.users (
 ALTER TABLE public.users OWNER TO dimed;
 
 --
+-- Name: vignettes; Type: TABLE; Schema: public; Owner: dimed
+--
+
+CREATE TABLE public.vignettes (
+    id uuid NOT NULL,
+    commande_id uuid NOT NULL,
+    ligne_id uuid NOT NULL,
+    filename character varying(255) NOT NULL,
+    extracted_exp date,
+    extracted_raw text,
+    uploaded_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    extracted_lot character varying(64),
+    extracted_fab date,
+    extracted_ppa numeric(10,2),
+    extracted_designation character varying(500)
+);
+
+
+ALTER TABLE public.vignettes OWNER TO dimed;
+
+--
 -- Data for Name: alembic_version; Type: TABLE DATA; Schema: public; Owner: dimed
 --
 
 COPY public.alembic_version (version_num) FROM stdin;
-012
+017
 \.
 
 
@@ -934,8 +1157,445 @@ b3b9e5d8-b8b9-4ec4-b2c8-c390e0621a6a	commandes	18a1fd87-3e0b-477f-a337-39709652d
 e45fd993-b6be-410e-9d6b-4dfc82ac196c	commandes	18a1fd87-3e0b-477f-a337-39709652df94	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-04-13 20:22:02.525036+00	{"statut": "en_preparation"}	{"statut": "en_verification"}
 032b61d8-f55c-48b9-92b4-0ad7e7d980f3	commandes	18a1fd87-3e0b-477f-a337-39709652df94	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-04-13 20:22:38.86976+00	{"statut": "en_verification"}	{"statut": "prete"}
 28871235-c900-45b5-bb94-7f6b239be13d	commandes	18a1fd87-3e0b-477f-a337-39709652df94	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-04-13 20:22:38.86976+00	{"visa_controleur": "None"}	{"visa_controleur": "Controleur"}
+caddfe4c-bdd2-4e10-975c-19358bc223d8	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:51:37.056864+00	{"stock_quantity": "76"}	{"stock_quantity": "74"}
 c876aaf3-8b41-4dd7-a145-db6e28c19f74	commandes	9eac02e4-6c72-4e43-8eab-9a03d0b97c26	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-04-14 22:04:13.281688+00	\N	{"id": "9eac02e4-6c72-4e43-8eab-9a03d0b97c26", "statut": "creee", "nb_colis": "None", "camion_id": "None", "commercial": "None", "created_at": "2026-04-14 22:04:13.281688+00:00", "created_by": "None", "updated_at": "2026-04-14 22:04:13.281688+00:00", "motif_echec": "None", "reference_id": "C00000032", "montant_total": "200.22", "operatrice_id": "None", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d", "preparateur_id": "None", "date_validation": "None", "visa_controleur": "None", "feuille_route_id": "None", "visa_preparateur": "None", "operatrice_comment": "None", "signature_pharmacien": "***"}
 400e7603-71bc-4cba-9d8e-090b107cdff6	lignes_commande	4af15eb0-92e6-47c4-88a4-b6358c755023	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-04-14 22:04:13.281688+00	\N	{"id": "4af15eb0-92e6-47c4-88a4-b6358c755023", "n_lot": "None", "verifie": "False", "created_at": "2026-04-14 22:04:13.281688+00:00", "created_by": "None", "remise_pct": "0.00", "updated_at": "2026-04-14 22:04:13.281688+00:00", "commande_id": "9eac02e4-6c72-4e43-8eab-9a03d0b97c26", "designation": "DOLIPRANE. 1000MG B/8 COMP", "ocr_verifie": "False", "qte_demandee": "2", "qte_prelevee": "None", "medicament_id": "2022fa77-0632-475d-8ff3-40ebb1869f4a", "prix_unitaire": "100.11"}
+418effc5-b851-475f-848a-ed9dccc9a5ed	users	3fa3d47d-99e0-4ac6-94c1-565354f320eb	insert	\N	2026-06-15 15:49:18.853118+00	\N	{"id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "nom": "Magasinier Demo", "role": "magasinier", "email": "magasinier@dimed.dz", "is_active": "True", "created_at": "2026-06-15 15:49:18.853118+00:00", "updated_at": "2026-06-15 15:49:18.853118+00:00", "password_hash": "***", "is_email_verified": "True"}
+5b627b4f-063d-4574-93df-b74b5915384c	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:25.373796+00	\N	{"id": "7646e2c0-c917-471f-98a8-29c2fc69479b", "statut": "creee", "created_at": "2026-06-15 15:50:25.373796+00:00", "updated_at": "2026-06-15 15:50:25.373796+00:00", "reference_id": "C00000033", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+a8cf56e5-87a1-48e3-9c7b-17d8dd897c5c	lignes_commande	e8863803-cf96-486b-b12b-ff36734d10db	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:25.373796+00	\N	{"id": "e8863803-cf96-486b-b12b-ff36734d10db", "verifie": "False", "created_at": "2026-06-15 15:50:25.373796+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:25.373796+00:00", "commande_id": "7646e2c0-c917-471f-98a8-29c2fc69479b", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+18fe651d-a9be-4027-95ec-9c11d67e61ef	lignes_commande	67571d1f-8d3b-48b3-b22b-95141657a2ef	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:25.373796+00	\N	{"id": "67571d1f-8d3b-48b3-b22b-95141657a2ef", "verifie": "False", "created_at": "2026-06-15 15:50:25.373796+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:25.373796+00:00", "commande_id": "7646e2c0-c917-471f-98a8-29c2fc69479b", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}
+55f49c99-a214-420d-8e76-9a91b044100e	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:25.440264+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 15:50:25.453265+00:00"}
+a9c9f6fe-2ac6-48a0-9c27-d0bc616d6a48	factures	046d60a0-8f87-4529-a5c3-7dfafef7dc89	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:25.440264+00	\N	{"id": "046d60a0-8f87-4529-a5c3-7dfafef7dc89", "created_at": "2026-06-15 15:50:25.440264+00:00", "montant_ht": "852.58", "updated_at": "2026-06-15 15:50:25.440264+00:00", "commande_id": "7646e2c0-c917-471f-98a8-29c2fc69479b", "montant_ttc": "852.58", "reference_id": "F0000000020", "date_emission": "2026-06-15 15:50:25.482200+00:00"}
+93a0a682-30ab-4c1c-a809-915bb141373e	creances	c9e75bb7-acc9-41c1-a09f-3d27d6eeb2b2	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:25.440264+00	\N	{"id": "c9e75bb7-acc9-41c1-a09f-3d27d6eeb2b2", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 15:50:25.440264+00:00", "facture_id": "046d60a0-8f87-4529-a5c3-7dfafef7dc89", "updated_at": "2026-06-15 15:50:25.440264+00:00", "montant_paye": "0", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+069962da-4243-4f63-9fbe-56f5bd1b1787	bons_livraison	5920fdbd-2226-4415-9299-115cac7a731c	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:25.440264+00	\N	{"id": "5920fdbd-2226-4415-9299-115cac7a731c", "code_barre": "BL00000020", "created_at": "2026-06-15 15:50:25.440264+00:00", "updated_at": "2026-06-15 15:50:25.440264+00:00", "commande_id": "7646e2c0-c917-471f-98a8-29c2fc69479b", "date_emission": "2026-06-15 15:50:25.482200+00:00"}
+8fc093c9-c817-47d9-9961-82153ed54672	medicaments	592e33a9-acd2-410c-81f2-6cb3f8f17298	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:25.440264+00	{"stock_quantity": "15"}	{"stock_quantity": "14"}
+883c8dd1-9a53-4937-9e01-25b93c3b14d7	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:25.440264+00	{"stock_quantity": "81"}	{"stock_quantity": "79"}
+3350ea06-ea52-4e43-9e05-1794974e1c4b	caddies_pool	802cd6c5-26bf-4d33-8599-a741f84c0a2c	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:50:26.106643+00	{"is_available": "True", "current_commande_id": "None"}	{"is_available": "False", "current_commande_id": "7646e2c0-c917-471f-98a8-29c2fc69479b"}
+94af4b02-9910-496b-9c6d-0b43c8179aec	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:50:26.106643+00	{"preparateur_id": "None"}	{"preparateur_id": "3fce8dc2-16e0-4ce6-b41c-c0657216eb62"}
+aff78547-1d24-4d52-8f7c-751cafa83bc5	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:50:26.106643+00	{"statut": "acceptee"}	{"statut": "en_preparation"}
+c27dcf5f-bb31-43a8-9257-fac0e0db1f2f	lignes_commande	e8863803-cf96-486b-b12b-ff36734d10db	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:50:26.252872+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "2"}
+a24a9d42-3cb1-4327-8ac2-e9f6994e308f	lignes_commande	67571d1f-8d3b-48b3-b22b-95141657a2ef	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:50:26.283267+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "1"}
+4f00a80d-7b13-45f1-94dd-ce371edefc2b	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:50:26.306914+00	{"visa_preparateur": "None"}	{"visa_preparateur": "Preparateur"}
+ee1bd3ef-e0a2-4bd4-b731-da1fd752ac79	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:50:26.306914+00	{"statut": "en_preparation"}	{"statut": "en_verification"}
+4b758c07-0e42-4a52-8283-28de5942cd9e	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:50:26.736619+00	{"camion_id": "None"}	{"camion_id": "0450c96e-c43b-47f9-bdd3-08e5a62b1ae7"}
+d9702558-071b-4bb3-be3d-1198decd624a	feuilles_route	5afebd2a-5d57-469b-8dc1-1aaa3a437189	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:50:26.736619+00	\N	{"id": "5afebd2a-5d57-469b-8dc1-1aaa3a437189", "date": "2026-06-15", "camion_id": "0450c96e-c43b-47f9-bdd3-08e5a62b1ae7", "compteurs": "{'colis_std': 0, 'sachets_std': 0, 'colis_frg': 0, 'sachets_frg': 0}", "created_at": "2026-06-15 15:50:26.736619+00:00", "updated_at": "2026-06-15 15:50:26.736619+00:00", "chargement_valide": "False"}
+ea529758-eaa3-4114-80c3-0eb43c799786	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:50:26.736619+00	{"feuille_route_id": "None"}	{"feuille_route_id": "5afebd2a-5d57-469b-8dc1-1aaa3a437189"}
+8af40035-03f0-4b85-9886-5f292a8de26c	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:50:26.816689+00	{"statut": "en_verification"}	{"statut": "prete"}
+f139e938-0815-40ec-96fa-cd947fb1b033	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:50:26.816689+00	{"nb_colis": "None", "visa_controleur": "None"}	{"nb_colis": "3", "visa_controleur": "Controleur"}
+ec99c9d3-16dc-4a0d-bcc5-5365976a9f97	colis	36b6616e-a0f9-4224-89b2-f744dcca9174	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:50:26.816689+00	\N	{"id": "36b6616e-a0f9-4224-89b2-f744dcca9174", "numero": "CLS00000001", "statut": "etiquete", "created_at": "2026-06-15 15:50:26.816689+00:00", "updated_at": "2026-06-15 15:50:26.816689+00:00", "commande_id": "7646e2c0-c917-471f-98a8-29c2fc69479b", "index_colis": "1"}
+d9f04e4d-b129-457c-85b7-58f62140beac	colis	e934bb2d-0bc6-4d1f-a884-7f8649193733	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:50:26.816689+00	\N	{"id": "e934bb2d-0bc6-4d1f-a884-7f8649193733", "numero": "CLS00000002", "statut": "etiquete", "created_at": "2026-06-15 15:50:26.816689+00:00", "updated_at": "2026-06-15 15:50:26.816689+00:00", "commande_id": "7646e2c0-c917-471f-98a8-29c2fc69479b", "index_colis": "2"}
+e713713f-1709-4c46-8cd0-7ff998015615	colis	3d1422e6-0ffc-4370-9678-4ee429565578	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:50:26.816689+00	\N	{"id": "3d1422e6-0ffc-4370-9678-4ee429565578", "numero": "CLS00000003", "statut": "etiquete", "created_at": "2026-06-15 15:50:26.816689+00:00", "updated_at": "2026-06-15 15:50:26.816689+00:00", "commande_id": "7646e2c0-c917-471f-98a8-29c2fc69479b", "index_colis": "3"}
+b3b231d0-5402-43bb-917d-39d03440b689	scans_colis	364a24bb-5a68-43d0-97a0-c9aab8580bfd	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 15:50:27.441693+00	\N	{"id": "364a24bb-5a68-43d0-97a0-c9aab8580bfd", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "36b6616e-a0f9-4224-89b2-f744dcca9174", "type_scan": "depot_pad", "created_at": "2026-06-15 15:50:27.441693+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 15:50:27.441693+00:00"}
+76feaab5-8179-4ad4-8dc0-22a541bce021	colis	36b6616e-a0f9-4224-89b2-f744dcca9174	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 15:50:27.441693+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301"}
+d68ee843-c9ad-46cd-9a80-d2f6a813e9ac	scans_colis	4b097f81-b2eb-4402-8a2d-b888d09799c3	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 15:50:27.523369+00	\N	{"id": "4b097f81-b2eb-4402-8a2d-b888d09799c3", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "e934bb2d-0bc6-4d1f-a884-7f8649193733", "type_scan": "depot_pad", "created_at": "2026-06-15 15:50:27.523369+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 15:50:27.523369+00:00"}
+e0985890-2516-4bcc-ab58-d1450b94595c	colis	e934bb2d-0bc6-4d1f-a884-7f8649193733	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 15:50:27.523369+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301"}
+8bd79e4e-599d-4734-a254-0e99a3213538	scans_colis	e5bff6ab-489a-438e-95b8-607483df4088	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 15:50:27.555517+00	\N	{"id": "e5bff6ab-489a-438e-95b8-607483df4088", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "3d1422e6-0ffc-4370-9678-4ee429565578", "type_scan": "depot_pad", "created_at": "2026-06-15 15:50:27.555517+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 15:50:27.555517+00:00"}
+d7200e17-49c8-4df4-b1c5-de1716b02b9e	colis	3d1422e6-0ffc-4370-9678-4ee429565578	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 15:50:27.555517+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301"}
+62704f4e-a491-4020-9a93-cd8eba0aed4b	scans_colis	8df2a5e4-e5de-490b-86b2-602eec33a2df	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.054764+00	\N	{"id": "8df2a5e4-e5de-490b-86b2-602eec33a2df", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "36b6616e-a0f9-4224-89b2-f744dcca9174", "type_scan": "chargement", "created_at": "2026-06-15 15:50:28.054764+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 15:50:28.054764+00:00"}
+c2e2aa3d-ba5c-4f46-85bb-dfa4ad700a57	colis	36b6616e-a0f9-4224-89b2-f744dcca9174	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.054764+00	{"statut": "sur_pad"}	{"statut": "charge"}
+fa81e93b-9906-4fb9-a88e-25a4cd6fd5cf	scans_colis	442bd1d7-16a9-44b9-868b-6c1a1abc03f4	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.116399+00	\N	{"id": "442bd1d7-16a9-44b9-868b-6c1a1abc03f4", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "e934bb2d-0bc6-4d1f-a884-7f8649193733", "type_scan": "chargement", "created_at": "2026-06-15 15:50:28.116399+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 15:50:28.116399+00:00"}
+420b56da-c81c-487b-b89f-bea06094d96b	colis	e934bb2d-0bc6-4d1f-a884-7f8649193733	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.116399+00	{"statut": "sur_pad"}	{"statut": "charge"}
+d84ebbfd-e997-439d-8789-ea057cfa720d	scans_colis	48822627-a4cc-4c7f-b583-60691a5f1b1b	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.160721+00	\N	{"id": "48822627-a4cc-4c7f-b583-60691a5f1b1b", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "3d1422e6-0ffc-4370-9678-4ee429565578", "type_scan": "chargement", "created_at": "2026-06-15 15:50:28.160721+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 15:50:28.160721+00:00"}
+0f7626cd-0bae-4ec8-b524-3b69e775e636	colis	3d1422e6-0ffc-4370-9678-4ee429565578	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.160721+00	{"statut": "sur_pad"}	{"statut": "charge"}
+38de5129-d4ea-4b43-adc3-98fa906905d6	feuilles_route	5afebd2a-5d57-469b-8dc1-1aaa3a437189	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.229634+00	{"chargement_valide": "False"}	{"chargement_valide": "True"}
+ef9af155-640a-4536-9502-bf7a9cc9cba2	feuilles_route	5afebd2a-5d57-469b-8dc1-1aaa3a437189	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.254628+00	{"signature_expedition": "***"}	{"signature_expedition": "***"}
+45a3e1f8-4ef0-4f05-a1a4-226e6dca8f9a	feuilles_route	5afebd2a-5d57-469b-8dc1-1aaa3a437189	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.276291+00	{"signature_chauffeur": "***"}	{"signature_chauffeur": "***"}
+f691ee93-535a-453d-8234-76b974b42771	commandes	7646e2c0-c917-471f-98a8-29c2fc69479b	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.296602+00	{"statut": "prete"}	{"statut": "en_route"}
+89b76da8-8f5b-4b68-9b1f-a2ac4d1f36d8	scans_colis	ede6269c-b142-4e9f-b03f-5b124a2d844a	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.336848+00	\N	{"id": "ede6269c-b142-4e9f-b03f-5b124a2d844a", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "36b6616e-a0f9-4224-89b2-f744dcca9174", "type_scan": "livraison", "created_at": "2026-06-15 15:50:28.336848+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 15:50:28.336848+00:00"}
+7ba43c1e-51ff-4f69-9157-b915aa7b6694	colis	36b6616e-a0f9-4224-89b2-f744dcca9174	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.336848+00	{"statut": "charge"}	{"statut": "livre"}
+89ef7fe8-596c-4127-99f4-5f2cbcc60ef4	scans_colis	36f28599-44ee-4578-81a7-7f804f6985b5	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.373533+00	\N	{"id": "36f28599-44ee-4578-81a7-7f804f6985b5", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "e934bb2d-0bc6-4d1f-a884-7f8649193733", "type_scan": "livraison", "created_at": "2026-06-15 15:50:28.373533+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 15:50:28.373533+00:00"}
+5156f572-1b48-4bbc-9cb4-78d4d4a5c5e9	colis	e934bb2d-0bc6-4d1f-a884-7f8649193733	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.373533+00	{"statut": "charge"}	{"statut": "livre"}
+734b0a97-f003-4a71-8837-96a2fd5376d0	scans_colis	56d01f24-7f96-4876-888d-ded1675db5e2	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.404734+00	\N	{"id": "56d01f24-7f96-4876-888d-ded1675db5e2", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "3d1422e6-0ffc-4370-9678-4ee429565578", "type_scan": "livraison", "created_at": "2026-06-15 15:50:28.404734+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 15:50:28.404734+00:00"}
+8050a1e8-c35d-4308-a7fc-f2289b96e81a	colis	3d1422e6-0ffc-4370-9678-4ee429565578	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:28.404734+00	{"statut": "charge"}	{"statut": "livre"}
+770d13e1-4795-4936-84c6-f72457208870	commandes	e7b4011b-5ed7-4f24-9ad2-2a04312b074e	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:29.721159+00	\N	{"id": "e7b4011b-5ed7-4f24-9ad2-2a04312b074e", "statut": "creee", "created_at": "2026-06-15 15:50:29.721159+00:00", "updated_at": "2026-06-15 15:50:29.721159+00:00", "reference_id": "C00000034", "montant_total": "397.00", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+1f21bc7b-ab79-419f-9dae-29ac1f9204e7	lignes_commande	3995f748-e345-4056-8ea9-426e0511a6c2	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:29.721159+00	\N	{"id": "3995f748-e345-4056-8ea9-426e0511a6c2", "verifie": "False", "created_at": "2026-06-15 15:50:29.721159+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:29.721159+00:00", "commande_id": "e7b4011b-5ed7-4f24-9ad2-2a04312b074e", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+8772c50b-b942-4556-b587-abe9f959d3b2	commandes	28b1f7b8-fe5e-45df-8bb4-c41ac4843a4c	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:31.065853+00	\N	{"id": "28b1f7b8-fe5e-45df-8bb4-c41ac4843a4c", "statut": "creee", "created_at": "2026-06-15 15:50:31.065853+00:00", "updated_at": "2026-06-15 15:50:31.065853+00:00", "reference_id": "C00000035", "montant_total": "397.00", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+96c51b8b-77f5-4fe2-a836-b7fe057608c9	lignes_commande	462c6f24-d437-4327-bfea-f2817d42b25f	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:31.065853+00	\N	{"id": "462c6f24-d437-4327-bfea-f2817d42b25f", "verifie": "False", "created_at": "2026-06-15 15:50:31.065853+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:31.065853+00:00", "commande_id": "28b1f7b8-fe5e-45df-8bb4-c41ac4843a4c", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+1d4467f4-c4d6-483c-9a71-b4a577a03a21	commandes	28b1f7b8-fe5e-45df-8bb4-c41ac4843a4c	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:31.096699+00	{"montant_total": "397.00"}	{"montant_total": "992.50"}
+a5654ee3-deea-4e16-ba8e-3bd2a5f7c631	lignes_commande	462c6f24-d437-4327-bfea-f2817d42b25f	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:31.096699+00	{"qte_demandee": "2"}	{"qte_demandee": "5"}
+b7edc235-e8a7-4e2c-93d4-e33e5244f1d2	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:51:38.094214+00	{"preparateur_id": "None"}	{"preparateur_id": "3fce8dc2-16e0-4ce6-b41c-c0657216eb62"}
+c97f43b8-298e-45f4-99c1-2333f3168c6f	lignes_commande	c00a7de5-d233-473a-a32d-46d18de22b6e	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:31.129364+00	\N	{"id": "c00a7de5-d233-473a-a32d-46d18de22b6e", "verifie": "False", "created_at": "2026-06-15 15:50:31.129364+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:31.129364+00:00", "commande_id": "28b1f7b8-fe5e-45df-8bb4-c41ac4843a4c", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}
+d9002eb3-6a13-46b0-a366-4a1b99be6947	commandes	28b1f7b8-fe5e-45df-8bb4-c41ac4843a4c	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:31.129364+00	{"montant_total": "992.50"}	{"lignes": "<app.models.commande.LigneCommande object at 0x000001E6085C16D0>", "montant_total": "1448.08"}
+7edc8d87-811b-4c5e-bc88-9898173cbdf6	commandes	28b1f7b8-fe5e-45df-8bb4-c41ac4843a4c	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:31.175989+00	{"lignes": "<app.models.commande.LigneCommande object at 0x000001E6085C17C0>", "montant_total": "1448.08"}	{"montant_total": "992.50"}
+7fc23b06-0fb6-4739-8d31-5574b375ec69	lignes_commande	c00a7de5-d233-473a-a32d-46d18de22b6e	delete	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:31.175989+00	{"id": "c00a7de5-d233-473a-a32d-46d18de22b6e", "exp": "None", "fab": "None", "ppa": "None", "n_lot": "None", "verifie": "False", "remise_pct": "0.00", "commande_id": "28b1f7b8-fe5e-45df-8bb4-c41ac4843a4c", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "qte_prelevee": "None", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}	\N
+75b2bb29-ced3-4198-98a5-c859c68b7af0	commandes	74e329cd-12fa-4a22-ac80-9c24b5d0e375	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:32.488775+00	\N	{"id": "74e329cd-12fa-4a22-ac80-9c24b5d0e375", "statut": "creee", "created_at": "2026-06-15 15:50:32.488775+00:00", "updated_at": "2026-06-15 15:50:32.488775+00:00", "reference_id": "C00000036", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+0fdf8fc0-aa02-45b7-820f-0820e5ae8ccd	lignes_commande	ed20ed63-8b72-446a-a420-87369615e8b5	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:32.488775+00	\N	{"id": "ed20ed63-8b72-446a-a420-87369615e8b5", "verifie": "False", "created_at": "2026-06-15 15:50:32.488775+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:32.488775+00:00", "commande_id": "74e329cd-12fa-4a22-ac80-9c24b5d0e375", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+c82f262c-f4c6-47b0-b1c2-86bfd7377c39	commandes	74e329cd-12fa-4a22-ac80-9c24b5d0e375	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:32.538317+00	{"statut": "creee"}	{"statut": "annulee"}
+bdcbe1b7-1015-4ed3-bbca-de59eb982adf	commandes	3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:33.9261+00	\N	{"id": "3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e", "statut": "creee", "created_at": "2026-06-15 15:50:33.926100+00:00", "updated_at": "2026-06-15 15:50:33.926100+00:00", "reference_id": "C00000037", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+b4201f75-d7a4-4f01-885f-ee3fa048f3cc	lignes_commande	574f1a95-0250-4131-a960-bc4daefce52e	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:33.9261+00	\N	{"id": "574f1a95-0250-4131-a960-bc4daefce52e", "verifie": "False", "created_at": "2026-06-15 15:50:33.926100+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:33.926100+00:00", "commande_id": "3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+1f2f0f84-6b6b-4076-9b27-efd403243e9b	commandes	3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:34.331446+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 15:50:34.336875+00:00"}
+e95ff130-7257-4695-aa0e-143e5dc7eb52	factures	36da2157-5f10-44ff-af9a-d9cca814d0ef	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:34.331446+00	\N	{"id": "36da2157-5f10-44ff-af9a-d9cca814d0ef", "created_at": "2026-06-15 15:50:34.331446+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 15:50:34.331446+00:00", "commande_id": "3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e", "montant_ttc": "198.50", "reference_id": "F0000000021", "date_emission": "2026-06-15 15:50:34.356499+00:00"}
+1cd6aede-dbfa-43a5-afd3-8a3fbe7bad8b	creances	c3ba29be-1f17-4bde-80e2-a2646ed34db2	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:34.331446+00	\N	{"id": "c3ba29be-1f17-4bde-80e2-a2646ed34db2", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 15:50:34.331446+00:00", "facture_id": "36da2157-5f10-44ff-af9a-d9cca814d0ef", "updated_at": "2026-06-15 15:50:34.331446+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+1d803576-9e78-4db7-bfab-fabb85cb24a8	bons_livraison	796dbf15-725f-44b6-a688-921c61992f4d	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:34.331446+00	\N	{"id": "796dbf15-725f-44b6-a688-921c61992f4d", "code_barre": "BL00000021", "created_at": "2026-06-15 15:50:34.331446+00:00", "updated_at": "2026-06-15 15:50:34.331446+00:00", "commande_id": "3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e", "date_emission": "2026-06-15 15:50:34.356499+00:00"}
+4b0c0cda-53fe-4b0f-a627-38c73f49d2ca	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:34.331446+00	{"stock_quantity": "79"}	{"stock_quantity": "78"}
+4e3bfd35-8f79-40a1-bd76-6edb5953ff5a	commandes	bdb4d02b-fdb8-481a-949a-1793843e552b	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:36.296772+00	\N	{"id": "bdb4d02b-fdb8-481a-949a-1793843e552b", "statut": "creee", "created_at": "2026-06-15 15:50:36.296772+00:00", "updated_at": "2026-06-15 15:50:36.296772+00:00", "reference_id": "C00000038", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+8495bc9c-3e55-46dd-bbd9-39ee41f079a6	lignes_commande	596b65ab-9337-4f5f-a178-7e608431c1d7	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:36.296772+00	\N	{"id": "596b65ab-9337-4f5f-a178-7e608431c1d7", "verifie": "False", "created_at": "2026-06-15 15:50:36.296772+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:36.296772+00:00", "commande_id": "bdb4d02b-fdb8-481a-949a-1793843e552b", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+8d42ad0c-9cd2-4b92-a5b5-28a810ca6699	commandes	bdb4d02b-fdb8-481a-949a-1793843e552b	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:36.337415+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 15:50:36.343251+00:00"}
+3e5760dc-c005-4ff7-91df-259256b37d90	factures	77f5887f-3062-44fe-bfa1-c778a8b6e8e1	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:36.337415+00	\N	{"id": "77f5887f-3062-44fe-bfa1-c778a8b6e8e1", "created_at": "2026-06-15 15:50:36.337415+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 15:50:36.337415+00:00", "commande_id": "bdb4d02b-fdb8-481a-949a-1793843e552b", "montant_ttc": "198.50", "reference_id": "F0000000022", "date_emission": "2026-06-15 15:50:36.360829+00:00"}
+cab7ac44-2a9e-4bde-b146-c7a81ebb93a4	creances	d070fdf9-7784-4036-9393-3ce27a558207	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:36.337415+00	\N	{"id": "d070fdf9-7784-4036-9393-3ce27a558207", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 15:50:36.337415+00:00", "facture_id": "77f5887f-3062-44fe-bfa1-c778a8b6e8e1", "updated_at": "2026-06-15 15:50:36.337415+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+20a3527a-e0b9-49b7-9db1-ee5ba3fa8531	bons_livraison	1a2643b5-3f16-44c1-a0f5-dca71cdb0fb3	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:36.337415+00	\N	{"id": "1a2643b5-3f16-44c1-a0f5-dca71cdb0fb3", "code_barre": "BL00000022", "created_at": "2026-06-15 15:50:36.337415+00:00", "updated_at": "2026-06-15 15:50:36.337415+00:00", "commande_id": "bdb4d02b-fdb8-481a-949a-1793843e552b", "date_emission": "2026-06-15 15:50:36.360829+00:00"}
+2acbc180-fb44-4334-9b35-0e0a284f04c5	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:36.337415+00	{"stock_quantity": "78"}	{"stock_quantity": "77"}
+0b49ecc0-2a69-4fd5-92c6-1a8be7032475	commandes	712e33d3-a45d-4ec6-82e1-488c453c04af	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:37.758943+00	\N	{"id": "712e33d3-a45d-4ec6-82e1-488c453c04af", "statut": "creee", "created_at": "2026-06-15 15:50:37.758943+00:00", "updated_at": "2026-06-15 15:50:37.758943+00:00", "reference_id": "C00000039", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+1fba4037-e381-499f-b5a9-8a5262a691dd	lignes_commande	09acc7ad-d731-4983-9f0c-85097f365ef7	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:37.758943+00	\N	{"id": "09acc7ad-d731-4983-9f0c-85097f365ef7", "verifie": "False", "created_at": "2026-06-15 15:50:37.758943+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:37.758943+00:00", "commande_id": "712e33d3-a45d-4ec6-82e1-488c453c04af", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+38763518-b2d8-4112-86b4-d42a26b38d9c	commandes	712e33d3-a45d-4ec6-82e1-488c453c04af	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:37.799595+00	{"operatrice_comment": "None"}	{"operatrice_comment": "Quantité erronée, merci de corriger la ligne 1"}
+f0e35728-8fb8-4e86-b714-5b15fe744c68	commandes	712e33d3-a45d-4ec6-82e1-488c453c04af	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:37.850071+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 15:50:37.853567+00:00"}
+f996db9e-7d35-436e-b4e1-4fa728daa4bb	factures	e91fc11a-f8c2-4977-8d51-04e9efdf4288	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:37.850071+00	\N	{"id": "e91fc11a-f8c2-4977-8d51-04e9efdf4288", "created_at": "2026-06-15 15:50:37.850071+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 15:50:37.850071+00:00", "commande_id": "712e33d3-a45d-4ec6-82e1-488c453c04af", "montant_ttc": "198.50", "reference_id": "F0000000023", "date_emission": "2026-06-15 15:50:37.869143+00:00"}
+8025089a-590b-4a51-831a-78103a411fcc	creances	6f346a45-b7b2-429c-9697-c92e153684cd	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:37.850071+00	\N	{"id": "6f346a45-b7b2-429c-9697-c92e153684cd", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 15:50:37.850071+00:00", "facture_id": "e91fc11a-f8c2-4977-8d51-04e9efdf4288", "updated_at": "2026-06-15 15:50:37.850071+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+055229d6-4692-4ea9-b1a8-cab74c195b61	bons_livraison	e0a57ccb-ea71-414e-bca3-421f229068ac	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:37.850071+00	\N	{"id": "e0a57ccb-ea71-414e-bca3-421f229068ac", "code_barre": "BL00000023", "created_at": "2026-06-15 15:50:37.850071+00:00", "updated_at": "2026-06-15 15:50:37.850071+00:00", "commande_id": "712e33d3-a45d-4ec6-82e1-488c453c04af", "date_emission": "2026-06-15 15:50:37.869143+00:00"}
+913d7270-7dc1-4b26-9ae9-eb913c5191ab	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:50:37.850071+00	{"stock_quantity": "77"}	{"stock_quantity": "76"}
+706ad982-cbae-4be4-bbfd-246fdf3a62e4	commandes	4557c818-1e9d-4727-b43e-bcc5492248d6	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:39.320869+00	\N	{"id": "4557c818-1e9d-4727-b43e-bcc5492248d6", "statut": "creee", "created_at": "2026-06-15 15:50:39.320869+00:00", "updated_at": "2026-06-15 15:50:39.320869+00:00", "reference_id": "C00000040", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+0a5b24d9-4dd1-42b0-856a-955b51a40fc0	lignes_commande	e3c06ff5-0fe6-4c3a-8e6d-dbe78fc09a2a	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:39.320869+00	\N	{"id": "e3c06ff5-0fe6-4c3a-8e6d-dbe78fc09a2a", "verifie": "False", "created_at": "2026-06-15 15:50:39.320869+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:39.320869+00:00", "commande_id": "4557c818-1e9d-4727-b43e-bcc5492248d6", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+7de71f3b-93e9-4462-adc3-e712329b5a30	commandes	846e1200-4c52-443a-8e39-3c7e1a60e6d0	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:41.907222+00	\N	{"id": "846e1200-4c52-443a-8e39-3c7e1a60e6d0", "statut": "creee", "created_at": "2026-06-15 15:50:41.907222+00:00", "updated_at": "2026-06-15 15:50:41.907222+00:00", "reference_id": "C00000041", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+2ce4445c-3ff3-4be6-a2ca-715f260772c7	lignes_commande	51a417dd-952a-4fd7-8df4-acf287bce530	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 15:50:41.907222+00	\N	{"id": "51a417dd-952a-4fd7-8df4-acf287bce530", "verifie": "False", "created_at": "2026-06-15 15:50:41.907222+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:50:41.907222+00:00", "commande_id": "846e1200-4c52-443a-8e39-3c7e1a60e6d0", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+a445a3e5-d008-4362-86e7-08b3b6f17a7c	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:51:36.801539+00	\N	{"id": "634eadc7-857c-4ff9-8163-5b54a9eb0dda", "statut": "creee", "created_at": "2026-06-15 15:51:36.801539+00:00", "updated_at": "2026-06-15 15:51:36.801539+00:00", "reference_id": "C00000042", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+c66485ee-4e7d-4ae1-927b-5eb4d9152ec4	lignes_commande	84e4f913-dd9c-4918-8adc-0dbca4703900	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:51:36.801539+00	\N	{"id": "84e4f913-dd9c-4918-8adc-0dbca4703900", "verifie": "False", "created_at": "2026-06-15 15:51:36.801539+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:51:36.801539+00:00", "commande_id": "634eadc7-857c-4ff9-8163-5b54a9eb0dda", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+5685a770-5e5e-447a-99d1-d8d0275976af	lignes_commande	a6d4f103-fb36-481c-a0da-acc55cf1dda4	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:51:36.801539+00	\N	{"id": "a6d4f103-fb36-481c-a0da-acc55cf1dda4", "verifie": "False", "created_at": "2026-06-15 15:51:36.801539+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 15:51:36.801539+00:00", "commande_id": "634eadc7-857c-4ff9-8163-5b54a9eb0dda", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}
+023635b6-c210-4757-b9e7-8f68bca2eb3a	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:51:37.056864+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 15:51:37.064921+00:00"}
+54a4b71b-ffcb-4a73-abba-13af483844c0	factures	70f35145-f5af-4763-907b-acc82e696f46	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:51:37.056864+00	\N	{"id": "70f35145-f5af-4763-907b-acc82e696f46", "created_at": "2026-06-15 15:51:37.056864+00:00", "montant_ht": "852.58", "updated_at": "2026-06-15 15:51:37.056864+00:00", "commande_id": "634eadc7-857c-4ff9-8163-5b54a9eb0dda", "montant_ttc": "852.58", "reference_id": "F0000000024", "date_emission": "2026-06-15 15:51:37.080196+00:00"}
+f303bccb-f520-465b-b62d-f04dec2b2690	creances	f1ed1bd1-0fb9-421f-8cf5-9b02d20c8129	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:51:37.056864+00	\N	{"id": "f1ed1bd1-0fb9-421f-8cf5-9b02d20c8129", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 15:51:37.056864+00:00", "facture_id": "70f35145-f5af-4763-907b-acc82e696f46", "updated_at": "2026-06-15 15:51:37.056864+00:00", "montant_paye": "0", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+a08684ac-e02d-41b1-a965-5aac7275932a	bons_livraison	ac7e0e60-55c3-4bb2-b936-99a47617d21f	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:51:37.056864+00	\N	{"id": "ac7e0e60-55c3-4bb2-b936-99a47617d21f", "code_barre": "BL00000024", "created_at": "2026-06-15 15:51:37.056864+00:00", "updated_at": "2026-06-15 15:51:37.056864+00:00", "commande_id": "634eadc7-857c-4ff9-8163-5b54a9eb0dda", "date_emission": "2026-06-15 15:51:37.080196+00:00"}
+c2ec13a2-a94b-43c0-9df6-1b523e4ae5e1	medicaments	592e33a9-acd2-410c-81f2-6cb3f8f17298	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 15:51:37.056864+00	{"stock_quantity": "14"}	{"stock_quantity": "13"}
+0dbcfa85-53d3-4a64-bb01-f4fd332b65f9	caddies_pool	802cd6c5-26bf-4d33-8599-a741f84c0a2c	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:51:38.094214+00	{"is_available": "True", "current_commande_id": "None"}	{"is_available": "False", "current_commande_id": "634eadc7-857c-4ff9-8163-5b54a9eb0dda"}
+a76d90d3-7dd8-4a09-a90c-e5dfb5516984	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:51:38.094214+00	{"statut": "acceptee"}	{"statut": "en_preparation"}
+3e7d1a58-c7a1-45ab-9d58-fea08f644392	lignes_commande	84e4f913-dd9c-4918-8adc-0dbca4703900	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:51:38.826652+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "1"}
+682d8573-0557-4855-9714-2e612a6da749	lignes_commande	a6d4f103-fb36-481c-a0da-acc55cf1dda4	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:51:38.963431+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "1"}
+c7c74576-016f-44bb-8376-84cd5313005d	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:51:39.084257+00	{"visa_preparateur": "None"}	{"visa_preparateur": "Preparateur"}
+f8b8b0ee-07ae-4766-908e-a56701244468	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:51:39.084257+00	{"statut": "en_preparation"}	{"statut": "prelevee_partiellement"}
+84d6f9a9-8c00-436d-aef2-706e4c9bcaca	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 15:51:39.084257+00	{"statut": "prelevee_partiellement"}	{"statut": "en_verification"}
+1b030337-e94f-4665-9e22-de5951dba85e	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:51:40.107857+00	{"camion_id": "None"}	{"camion_id": "0450c96e-c43b-47f9-bdd3-08e5a62b1ae7"}
+523ff601-3439-4f5e-aed6-6ad41a35b908	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:51:40.107857+00	{"feuille_route_id": "None"}	{"feuille_route_id": "5afebd2a-5d57-469b-8dc1-1aaa3a437189"}
+60b137d6-4a2c-4082-aedb-c0b76803bf6c	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:51:40.249629+00	{"statut": "en_verification"}	{"statut": "prete"}
+5708efaa-3127-44b4-be82-b70dcd620c16	commandes	634eadc7-857c-4ff9-8163-5b54a9eb0dda	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:51:40.249629+00	{"nb_colis": "None", "visa_controleur": "None"}	{"nb_colis": "3", "visa_controleur": "Controleur"}
+720bc4cd-3603-49d2-aedf-521630b55271	colis	feb38818-c5b5-4275-8122-482af5cabff9	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:51:40.249629+00	\N	{"id": "feb38818-c5b5-4275-8122-482af5cabff9", "numero": "CLS00000004", "statut": "etiquete", "created_at": "2026-06-15 15:51:40.249629+00:00", "updated_at": "2026-06-15 15:51:40.249629+00:00", "commande_id": "634eadc7-857c-4ff9-8163-5b54a9eb0dda", "index_colis": "1"}
+4c10adbf-e8a5-4a9a-936e-f098870231e6	colis	77f65be3-db67-4a40-8aa7-eca7c8917770	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:51:40.249629+00	\N	{"id": "77f65be3-db67-4a40-8aa7-eca7c8917770", "numero": "CLS00000005", "statut": "etiquete", "created_at": "2026-06-15 15:51:40.249629+00:00", "updated_at": "2026-06-15 15:51:40.249629+00:00", "commande_id": "634eadc7-857c-4ff9-8163-5b54a9eb0dda", "index_colis": "2"}
+5a4f9a82-9f57-4b2d-ab70-379217da754c	colis	e8524629-231b-47a9-924c-90c318a566c3	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 15:51:40.249629+00	\N	{"id": "e8524629-231b-47a9-924c-90c318a566c3", "numero": "CLS00000006", "statut": "etiquete", "created_at": "2026-06-15 15:51:40.249629+00:00", "updated_at": "2026-06-15 15:51:40.249629+00:00", "commande_id": "634eadc7-857c-4ff9-8163-5b54a9eb0dda", "index_colis": "3"}
+3c8df37b-1323-4b08-bd25-b9ed9cae69d0	scans_colis	170a62fd-fe37-448d-8922-da12b6f67eed	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 15:51:57.90683+00	\N	{"id": "170a62fd-fe37-448d-8922-da12b6f67eed", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "feb38818-c5b5-4275-8122-482af5cabff9", "type_scan": "depot_pad", "created_at": "2026-06-15 15:51:57.906830+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 15:51:57.906830+00:00"}
+4d8d63ce-f2b2-4746-8c9b-6651fdc441b1	colis	feb38818-c5b5-4275-8122-482af5cabff9	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 15:51:57.90683+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301"}
+7b41ae33-9acf-47ae-b1b7-4ab85799dee7	scans_colis	366ee6d4-803d-447f-a910-e5d2f65da8d0	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:31.551987+00	\N	{"id": "366ee6d4-803d-447f-a910-e5d2f65da8d0", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "feb38818-c5b5-4275-8122-482af5cabff9", "type_scan": "depot_pad", "created_at": "2026-06-15 16:03:31.551987+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 16:03:31.551987+00:00"}
+5bb42298-921b-4c49-b7f7-f546eb9e41d4	scans_colis	510c7946-9904-4a1e-94bc-642011a7961f	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:31.551987+00	\N	{"id": "510c7946-9904-4a1e-94bc-642011a7961f", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "77f65be3-db67-4a40-8aa7-eca7c8917770", "type_scan": "depot_pad", "created_at": "2026-06-15 16:03:31.551987+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 16:03:31.551987+00:00"}
+c9cc623a-6d53-45f8-9d8d-63106b200675	colis	77f65be3-db67-4a40-8aa7-eca7c8917770	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:31.551987+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301"}
+5abd5fd0-c49e-4228-8672-3f3e1656e1e1	scans_colis	07e1194a-87d0-4bfb-9267-3dd36f775ff9	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:31.551987+00	\N	{"id": "07e1194a-87d0-4bfb-9267-3dd36f775ff9", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "e8524629-231b-47a9-924c-90c318a566c3", "type_scan": "depot_pad", "created_at": "2026-06-15 16:03:31.551987+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 16:03:31.551987+00:00"}
+400aa068-a518-4705-98a0-55ab9d2eb6dd	colis	e8524629-231b-47a9-924c-90c318a566c3	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:31.551987+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301"}
+aef7abd7-13fb-47f3-832e-1f92b9bd2c3a	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:54.94945+00	\N	{"id": "b457ab88-16a4-423c-a37c-7c9373b01e00", "statut": "creee", "created_at": "2026-06-15 16:03:54.949450+00:00", "updated_at": "2026-06-15 16:03:54.949450+00:00", "reference_id": "C00000043", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+31836782-d442-4fa4-a6f8-a0348f822611	lignes_commande	4623a9dd-d41e-4487-b795-25997fda5acb	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:54.94945+00	\N	{"id": "4623a9dd-d41e-4487-b795-25997fda5acb", "verifie": "False", "created_at": "2026-06-15 16:03:54.949450+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:03:54.949450+00:00", "commande_id": "b457ab88-16a4-423c-a37c-7c9373b01e00", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+1b989e04-ea19-44a0-8c4e-5ab900c96d35	lignes_commande	e500ce49-19d5-4799-ac51-89c496b238e6	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:54.94945+00	\N	{"id": "e500ce49-19d5-4799-ac51-89c496b238e6", "verifie": "False", "created_at": "2026-06-15 16:03:54.949450+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:03:54.949450+00:00", "commande_id": "b457ab88-16a4-423c-a37c-7c9373b01e00", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}
+12cd3921-d326-4da2-a9c9-0b6c2ed618fc	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:55.016795+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:03:55.033887+00:00"}
+b20d3098-21a8-45c2-a077-326f61e88326	factures	905ea0a2-811c-4610-85ba-7c45e9b74124	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:55.016795+00	\N	{"id": "905ea0a2-811c-4610-85ba-7c45e9b74124", "created_at": "2026-06-15 16:03:55.016795+00:00", "montant_ht": "852.58", "updated_at": "2026-06-15 16:03:55.016795+00:00", "commande_id": "b457ab88-16a4-423c-a37c-7c9373b01e00", "montant_ttc": "852.58", "reference_id": "F0000000025", "date_emission": "2026-06-15 16:03:55.072684+00:00"}
+47e09f27-849f-46d9-a02e-8361376669c5	creances	0bb1f412-e3bd-4edd-b974-af7c1afaef02	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:55.016795+00	\N	{"id": "0bb1f412-e3bd-4edd-b974-af7c1afaef02", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:03:55.016795+00:00", "facture_id": "905ea0a2-811c-4610-85ba-7c45e9b74124", "updated_at": "2026-06-15 16:03:55.016795+00:00", "montant_paye": "0", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+1ae892ea-0718-460d-bd41-0ce34cb11e21	bons_livraison	2927e86d-d1a3-4f25-8c20-3c964935825b	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:55.016795+00	\N	{"id": "2927e86d-d1a3-4f25-8c20-3c964935825b", "code_barre": "BL00000025", "created_at": "2026-06-15 16:03:55.016795+00:00", "updated_at": "2026-06-15 16:03:55.016795+00:00", "commande_id": "b457ab88-16a4-423c-a37c-7c9373b01e00", "date_emission": "2026-06-15 16:03:55.072684+00:00"}
+f417564f-9ec1-492e-a6ca-9cdeeb5a6b7e	medicaments	592e33a9-acd2-410c-81f2-6cb3f8f17298	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:55.016795+00	{"stock_quantity": "13"}	{"stock_quantity": "12"}
+ac0ca032-7d23-41ae-bac3-09a4abf3741c	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:55.016795+00	{"stock_quantity": "74"}	{"stock_quantity": "72"}
+98da6774-94a8-4e7f-97fb-8cfc250afd45	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:03:55.764113+00	{"preparateur_id": "None"}	{"preparateur_id": "3fce8dc2-16e0-4ce6-b41c-c0657216eb62"}
+d7884130-4b8a-4304-811b-0418943d9df4	caddies_pool	802cd6c5-26bf-4d33-8599-a741f84c0a2c	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:03:55.764113+00	{"is_available": "True", "current_commande_id": "None"}	{"is_available": "False", "current_commande_id": "b457ab88-16a4-423c-a37c-7c9373b01e00"}
+f996ad7d-9a36-4dd7-a619-f6e176bd9f8a	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:03:55.764113+00	{"statut": "acceptee"}	{"statut": "en_preparation"}
+ca54640e-25a9-48b4-ac44-fdb94c24b4e0	lignes_commande	4623a9dd-d41e-4487-b795-25997fda5acb	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:03:55.875812+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "2"}
+33df9beb-bf1f-46d2-9856-642b5ea52837	lignes_commande	e500ce49-19d5-4799-ac51-89c496b238e6	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:03:55.912383+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "1"}
+cb844821-7721-406d-8494-8f95a4e25b28	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:03:55.946957+00	{"visa_preparateur": "None"}	{"visa_preparateur": "Preparateur"}
+b93da75b-8042-454e-b62f-90933d125e6b	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:03:55.946957+00	{"statut": "en_preparation"}	{"statut": "en_verification"}
+d5d948db-4cdf-4f3a-bfbf-314810a7c9b3	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:03:56.526132+00	{"camion_id": "None"}	{"camion_id": "0450c96e-c43b-47f9-bdd3-08e5a62b1ae7"}
+7adce025-557b-4437-89a3-e4d48b2dbb9d	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:03:56.526132+00	{"feuille_route_id": "None"}	{"feuille_route_id": "5afebd2a-5d57-469b-8dc1-1aaa3a437189"}
+795f3729-a795-4f1f-b9b1-78429d7af39f	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:03:56.63148+00	{"statut": "en_verification"}	{"statut": "prete"}
+15266325-91c3-4f1b-ac53-b9a21fc122ad	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:03:56.63148+00	{"nb_colis": "None", "visa_controleur": "None"}	{"nb_colis": "3", "visa_controleur": "Controleur"}
+619b97cc-df4f-44b9-8ff1-d59b56eec12e	colis	9865055c-ae07-4449-9fa9-393ae8e05984	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:03:56.63148+00	\N	{"id": "9865055c-ae07-4449-9fa9-393ae8e05984", "numero": "CLS00000007", "statut": "etiquete", "created_at": "2026-06-15 16:03:56.631480+00:00", "updated_at": "2026-06-15 16:03:56.631480+00:00", "commande_id": "b457ab88-16a4-423c-a37c-7c9373b01e00", "index_colis": "1"}
+067b54df-cbb9-4eb7-af4c-4eabc096fee0	colis	321c323c-856f-4ffe-a108-6d3dffeffc4d	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:03:56.63148+00	\N	{"id": "321c323c-856f-4ffe-a108-6d3dffeffc4d", "numero": "CLS00000008", "statut": "etiquete", "created_at": "2026-06-15 16:03:56.631480+00:00", "updated_at": "2026-06-15 16:03:56.631480+00:00", "commande_id": "b457ab88-16a4-423c-a37c-7c9373b01e00", "index_colis": "2"}
+d349b672-b060-4777-ad3f-a2dddb2715d4	colis	1427f0c3-ba2d-4ef2-a865-79b32a844edf	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:03:56.63148+00	\N	{"id": "1427f0c3-ba2d-4ef2-a865-79b32a844edf", "numero": "CLS00000009", "statut": "etiquete", "created_at": "2026-06-15 16:03:56.631480+00:00", "updated_at": "2026-06-15 16:03:56.631480+00:00", "commande_id": "b457ab88-16a4-423c-a37c-7c9373b01e00", "index_colis": "3"}
+0e430106-bbbb-4ff7-85ab-84dc872fcb69	scans_colis	28b50659-e01c-4771-b51b-0c13d3381358	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:57.434243+00	\N	{"id": "28b50659-e01c-4771-b51b-0c13d3381358", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "9865055c-ae07-4449-9fa9-393ae8e05984", "type_scan": "depot_pad", "created_at": "2026-06-15 16:03:57.434243+00:00", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb", "updated_at": "2026-06-15 16:03:57.434243+00:00"}
+5cff6434-8673-4190-9bd4-bf7fc9cebbad	colis	9865055c-ae07-4449-9fa9-393ae8e05984	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:57.434243+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb"}
+bb416c70-2643-4f2c-b6d9-80fb0653bb86	scans_colis	90512f54-dcfc-4f6e-8109-8f6e1a5a7d22	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:57.512846+00	\N	{"id": "90512f54-dcfc-4f6e-8109-8f6e1a5a7d22", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "321c323c-856f-4ffe-a108-6d3dffeffc4d", "type_scan": "depot_pad", "created_at": "2026-06-15 16:03:57.512846+00:00", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb", "updated_at": "2026-06-15 16:03:57.512846+00:00"}
+45e3ea1b-ea3c-49fb-af8f-fa4652d1cfa7	colis	321c323c-856f-4ffe-a108-6d3dffeffc4d	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:57.512846+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb"}
+60e8825f-567d-43bf-aaa4-33f413fc2523	scans_colis	07f28dca-4c58-40de-8b72-ba58801bce60	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:57.554686+00	\N	{"id": "07f28dca-4c58-40de-8b72-ba58801bce60", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "1427f0c3-ba2d-4ef2-a865-79b32a844edf", "type_scan": "depot_pad", "created_at": "2026-06-15 16:03:57.554686+00:00", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb", "updated_at": "2026-06-15 16:03:57.554686+00:00"}
+28b945f7-e0bb-4e21-bbda-80087b9c5a00	colis	1427f0c3-ba2d-4ef2-a865-79b32a844edf	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:03:57.554686+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb"}
+aeb68521-49e0-4d80-8b5b-8cc8822e0d37	scans_colis	9031aee7-2e1b-485f-8804-e535b8eb0f32	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.151013+00	\N	{"id": "9031aee7-2e1b-485f-8804-e535b8eb0f32", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "9865055c-ae07-4449-9fa9-393ae8e05984", "type_scan": "chargement", "created_at": "2026-06-15 16:03:58.151013+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:03:58.151013+00:00"}
+f7d4d792-38c2-40c2-8edf-356ceae96d25	colis	9865055c-ae07-4449-9fa9-393ae8e05984	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.151013+00	{"statut": "sur_pad"}	{"statut": "charge"}
+ac4a7518-1972-4e0e-905d-9fca32eaa4f8	scans_colis	37ce594a-0acb-45d5-b0f9-63ab742fa222	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.224351+00	\N	{"id": "37ce594a-0acb-45d5-b0f9-63ab742fa222", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "321c323c-856f-4ffe-a108-6d3dffeffc4d", "type_scan": "chargement", "created_at": "2026-06-15 16:03:58.224351+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:03:58.224351+00:00"}
+e40e7da2-74de-470f-ba4a-4f2d6f0edf0a	colis	321c323c-856f-4ffe-a108-6d3dffeffc4d	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.224351+00	{"statut": "sur_pad"}	{"statut": "charge"}
+0f26e588-4ff7-428a-8ad2-88bb03a8a4ec	commandes	53b0ca21-ecda-4875-8b88-45e6a4426f74	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:07.367451+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:04:07.376717+00:00"}
+c7996731-c7fc-4260-b8cf-267b41dc8c77	scans_colis	cfd51e9a-c545-4eb7-912a-a871fbc30883	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.26844+00	\N	{"id": "cfd51e9a-c545-4eb7-912a-a871fbc30883", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "1427f0c3-ba2d-4ef2-a865-79b32a844edf", "type_scan": "chargement", "created_at": "2026-06-15 16:03:58.268440+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:03:58.268440+00:00"}
+2349947a-61c3-44bc-a44d-ece2d118d487	colis	1427f0c3-ba2d-4ef2-a865-79b32a844edf	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.26844+00	{"statut": "sur_pad"}	{"statut": "charge"}
+9dca5468-97e9-49cf-8682-2f89a6e4b3b6	commandes	b457ab88-16a4-423c-a37c-7c9373b01e00	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.401873+00	{"statut": "prete"}	{"statut": "en_route"}
+8cae4685-441f-42df-811a-64bde6a9f83e	scans_colis	77933e11-a42c-4424-9047-a7e0aa827c9b	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.45238+00	\N	{"id": "77933e11-a42c-4424-9047-a7e0aa827c9b", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "9865055c-ae07-4449-9fa9-393ae8e05984", "type_scan": "livraison", "created_at": "2026-06-15 16:03:58.452380+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:03:58.452380+00:00"}
+0a3fcedc-206f-4802-b5b2-454871249c44	colis	9865055c-ae07-4449-9fa9-393ae8e05984	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.45238+00	{"statut": "charge"}	{"statut": "livre"}
+645e0fbe-f02d-44e4-bc61-2d7b68be8fe5	scans_colis	bdbd593b-5e20-4b27-9546-8ec56088c945	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.495277+00	\N	{"id": "bdbd593b-5e20-4b27-9546-8ec56088c945", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "321c323c-856f-4ffe-a108-6d3dffeffc4d", "type_scan": "livraison", "created_at": "2026-06-15 16:03:58.495277+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:03:58.495277+00:00"}
+5b26d086-488b-4fe7-a86c-ae68c8ea9b13	colis	321c323c-856f-4ffe-a108-6d3dffeffc4d	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.495277+00	{"statut": "charge"}	{"statut": "livre"}
+7332d248-76f9-4d26-b555-ce180c5b7105	scans_colis	31807036-40b5-4f15-a20b-f51167eef59a	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.5357+00	\N	{"id": "31807036-40b5-4f15-a20b-f51167eef59a", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "1427f0c3-ba2d-4ef2-a865-79b32a844edf", "type_scan": "livraison", "created_at": "2026-06-15 16:03:58.535700+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:03:58.535700+00:00"}
+fd0385a4-12c3-4e81-a496-aa117c3a0014	colis	1427f0c3-ba2d-4ef2-a865-79b32a844edf	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:03:58.5357+00	{"statut": "charge"}	{"statut": "livre"}
+6da34889-138e-4893-9da0-b8f5c21ffa30	commandes	06a1f38a-7a9b-4821-9370-040ff3df9e56	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:00.515329+00	\N	{"id": "06a1f38a-7a9b-4821-9370-040ff3df9e56", "statut": "creee", "created_at": "2026-06-15 16:04:00.515329+00:00", "updated_at": "2026-06-15 16:04:00.515329+00:00", "reference_id": "C00000044", "montant_total": "397.00", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+d60d39c0-b18e-4c97-a084-7ecc8119eb25	lignes_commande	930bc2e5-8a56-4385-8d16-ddd393e48e48	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:00.515329+00	\N	{"id": "930bc2e5-8a56-4385-8d16-ddd393e48e48", "verifie": "False", "created_at": "2026-06-15 16:04:00.515329+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:00.515329+00:00", "commande_id": "06a1f38a-7a9b-4821-9370-040ff3df9e56", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+1d8a29c0-bd80-4b27-b97a-fc3d50d58d01	commandes	e23d80e3-a890-4a3a-801a-b2b74b3e07d6	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:02.638432+00	\N	{"id": "e23d80e3-a890-4a3a-801a-b2b74b3e07d6", "statut": "creee", "created_at": "2026-06-15 16:04:02.638432+00:00", "updated_at": "2026-06-15 16:04:02.638432+00:00", "reference_id": "C00000045", "montant_total": "397.00", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+413fae76-928b-4409-bed2-8d946b5e792b	lignes_commande	c5cfa8f5-191f-4247-836e-11e602684b44	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:02.638432+00	\N	{"id": "c5cfa8f5-191f-4247-836e-11e602684b44", "verifie": "False", "created_at": "2026-06-15 16:04:02.638432+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:02.638432+00:00", "commande_id": "e23d80e3-a890-4a3a-801a-b2b74b3e07d6", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+d1a0516f-33d6-4051-9d6a-665e8b4d0d5d	commandes	e23d80e3-a890-4a3a-801a-b2b74b3e07d6	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:02.67498+00	{"montant_total": "397.00"}	{"montant_total": "992.50"}
+c14aa2fd-f673-47f9-9b44-90b056913cc6	lignes_commande	c5cfa8f5-191f-4247-836e-11e602684b44	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:02.67498+00	{"qte_demandee": "2"}	{"qte_demandee": "5"}
+47f551f6-6a9d-4579-8608-be9795e5277b	lignes_commande	9712d7c8-2261-47f6-9d3b-f0b0b114b83a	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:02.721706+00	\N	{"id": "9712d7c8-2261-47f6-9d3b-f0b0b114b83a", "verifie": "False", "created_at": "2026-06-15 16:04:02.721706+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:02.721706+00:00", "commande_id": "e23d80e3-a890-4a3a-801a-b2b74b3e07d6", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}
+28a63285-afa7-4fe5-bd28-f0cfbe3222ca	commandes	e23d80e3-a890-4a3a-801a-b2b74b3e07d6	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:02.721706+00	{"montant_total": "992.50"}	{"lignes": "<app.models.commande.LigneCommande object at 0x0000028F515D9A90>", "montant_total": "1448.08"}
+5bbc8687-d1a8-480b-838d-89e4e20da60c	commandes	e23d80e3-a890-4a3a-801a-b2b74b3e07d6	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:02.774949+00	{"lignes": "<app.models.commande.LigneCommande object at 0x0000028F515D9D60>", "montant_total": "1448.08"}	{"montant_total": "992.50"}
+a3ee5046-0db9-42d0-a461-a47d78a1844b	lignes_commande	9712d7c8-2261-47f6-9d3b-f0b0b114b83a	delete	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:02.774949+00	{"id": "9712d7c8-2261-47f6-9d3b-f0b0b114b83a", "exp": "None", "fab": "None", "ppa": "None", "n_lot": "None", "verifie": "False", "remise_pct": "0.00", "commande_id": "e23d80e3-a890-4a3a-801a-b2b74b3e07d6", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "qte_prelevee": "None", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}	\N
+c329ed14-cac7-4d52-992e-16412ecd73df	commandes	17f6af5e-4fd3-468b-8f54-1a522a6328da	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:04.809129+00	\N	{"id": "17f6af5e-4fd3-468b-8f54-1a522a6328da", "statut": "creee", "created_at": "2026-06-15 16:04:04.809129+00:00", "updated_at": "2026-06-15 16:04:04.809129+00:00", "reference_id": "C00000046", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+964a8de2-7d5d-42b8-947d-a26808d6772c	lignes_commande	3c32c3b9-f362-4e37-a54c-ccfb7d4f57a6	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:04.809129+00	\N	{"id": "3c32c3b9-f362-4e37-a54c-ccfb7d4f57a6", "verifie": "False", "created_at": "2026-06-15 16:04:04.809129+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:04.809129+00:00", "commande_id": "17f6af5e-4fd3-468b-8f54-1a522a6328da", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+a93122e3-4ba3-462a-8b43-aff006015242	commandes	17f6af5e-4fd3-468b-8f54-1a522a6328da	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:04.852021+00	{"statut": "creee"}	{"statut": "annulee"}
+c3a9272a-cfdb-4cc1-a805-54cf2a49d0f0	commandes	53b0ca21-ecda-4875-8b88-45e6a4426f74	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:06.904612+00	\N	{"id": "53b0ca21-ecda-4875-8b88-45e6a4426f74", "statut": "creee", "created_at": "2026-06-15 16:04:06.904612+00:00", "updated_at": "2026-06-15 16:04:06.904612+00:00", "reference_id": "C00000047", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+f0047f35-0584-4785-a1de-034cf44a3d89	lignes_commande	d0e53ff0-c1ef-45a3-bf64-724ae6d65fff	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:06.904612+00	\N	{"id": "d0e53ff0-c1ef-45a3-bf64-724ae6d65fff", "verifie": "False", "created_at": "2026-06-15 16:04:06.904612+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:06.904612+00:00", "commande_id": "53b0ca21-ecda-4875-8b88-45e6a4426f74", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+afa56001-f331-4760-aff1-9db1236d479a	factures	916b66d7-ef8d-4016-86db-d1c21b95e4ac	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:07.367451+00	\N	{"id": "916b66d7-ef8d-4016-86db-d1c21b95e4ac", "created_at": "2026-06-15 16:04:07.367451+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 16:04:07.367451+00:00", "commande_id": "53b0ca21-ecda-4875-8b88-45e6a4426f74", "montant_ttc": "198.50", "reference_id": "F0000000026", "date_emission": "2026-06-15 16:04:07.405483+00:00"}
+e5b0029d-c484-468b-bd66-2b0d19d75872	creances	ce68b54e-76ce-4f0f-838c-0191ce205ea7	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:07.367451+00	\N	{"id": "ce68b54e-76ce-4f0f-838c-0191ce205ea7", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:04:07.367451+00:00", "facture_id": "916b66d7-ef8d-4016-86db-d1c21b95e4ac", "updated_at": "2026-06-15 16:04:07.367451+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+b2664c18-4340-4596-b016-a60599a4e459	bons_livraison	53cdf81f-3a93-4c4d-9e1a-e766e05bdbef	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:07.367451+00	\N	{"id": "53cdf81f-3a93-4c4d-9e1a-e766e05bdbef", "code_barre": "BL00000026", "created_at": "2026-06-15 16:04:07.367451+00:00", "updated_at": "2026-06-15 16:04:07.367451+00:00", "commande_id": "53b0ca21-ecda-4875-8b88-45e6a4426f74", "date_emission": "2026-06-15 16:04:07.405483+00:00"}
+f3a9d1d8-2042-440e-91dd-79797bbfe8e8	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:07.367451+00	{"stock_quantity": "72"}	{"stock_quantity": "71"}
+ef2a3274-ccf5-4817-8f43-ced5e78a5a2c	commandes	7e3dbefd-9e34-4af7-8137-bd435e68555e	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:10.006973+00	\N	{"id": "7e3dbefd-9e34-4af7-8137-bd435e68555e", "statut": "creee", "created_at": "2026-06-15 16:04:10.006973+00:00", "updated_at": "2026-06-15 16:04:10.006973+00:00", "reference_id": "C00000048", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+cd6f5492-04ea-4e29-80f7-510eb6c4c528	lignes_commande	bb329d26-f833-434e-bc60-fb6b97fd51bb	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:10.006973+00	\N	{"id": "bb329d26-f833-434e-bc60-fb6b97fd51bb", "verifie": "False", "created_at": "2026-06-15 16:04:10.006973+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:10.006973+00:00", "commande_id": "7e3dbefd-9e34-4af7-8137-bd435e68555e", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+e4945c06-095d-463d-9675-010fc3603f6a	commandes	7e3dbefd-9e34-4af7-8137-bd435e68555e	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:10.056726+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:04:10.064220+00:00"}
+6268f000-d3f3-46c9-9f8f-d9c295c731a6	factures	2da19ffc-1863-43e7-8606-9c32287eee54	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:10.056726+00	\N	{"id": "2da19ffc-1863-43e7-8606-9c32287eee54", "created_at": "2026-06-15 16:04:10.056726+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 16:04:10.056726+00:00", "commande_id": "7e3dbefd-9e34-4af7-8137-bd435e68555e", "montant_ttc": "198.50", "reference_id": "F0000000027", "date_emission": "2026-06-15 16:04:10.082811+00:00"}
+f0ee0785-8915-4d7b-90a3-60e1397f5aaa	creances	c0f369ea-97e2-4192-a844-ad158d6851b3	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:10.056726+00	\N	{"id": "c0f369ea-97e2-4192-a844-ad158d6851b3", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:04:10.056726+00:00", "facture_id": "2da19ffc-1863-43e7-8606-9c32287eee54", "updated_at": "2026-06-15 16:04:10.056726+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+e09eb1fe-309e-4105-9572-e885d1a6b4d4	bons_livraison	ab458bf0-c55f-41df-aa54-84b40c8cdc45	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:10.056726+00	\N	{"id": "ab458bf0-c55f-41df-aa54-84b40c8cdc45", "code_barre": "BL00000027", "created_at": "2026-06-15 16:04:10.056726+00:00", "updated_at": "2026-06-15 16:04:10.056726+00:00", "commande_id": "7e3dbefd-9e34-4af7-8137-bd435e68555e", "date_emission": "2026-06-15 16:04:10.082811+00:00"}
+bd898caf-b67a-4960-8c85-ebdd6f0598a2	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:10.056726+00	{"stock_quantity": "71"}	{"stock_quantity": "70"}
+78d1a4fb-37e7-4b39-86de-66f3edaf6fe0	commandes	afd7ad6c-776b-4c2c-9c6a-ce0134c65366	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:12.237768+00	\N	{"id": "afd7ad6c-776b-4c2c-9c6a-ce0134c65366", "statut": "creee", "created_at": "2026-06-15 16:04:12.237768+00:00", "updated_at": "2026-06-15 16:04:12.237768+00:00", "reference_id": "C00000049", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+d4ab501e-401d-4ec9-a065-8b527cf0e54f	lignes_commande	8e75487e-7798-459b-9d91-bf2f78b01b07	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:12.237768+00	\N	{"id": "8e75487e-7798-459b-9d91-bf2f78b01b07", "verifie": "False", "created_at": "2026-06-15 16:04:12.237768+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:12.237768+00:00", "commande_id": "afd7ad6c-776b-4c2c-9c6a-ce0134c65366", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+a7f4ec70-acc5-4c29-b639-b6b735ae0365	commandes	afd7ad6c-776b-4c2c-9c6a-ce0134c65366	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:12.275415+00	{"operatrice_comment": "None"}	{"operatrice_comment": "Quantité erronée, merci de corriger la ligne 1"}
+622380f9-9b05-4b8a-b9ec-9ce39190e86d	commandes	afd7ad6c-776b-4c2c-9c6a-ce0134c65366	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:12.349117+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:04:12.361571+00:00"}
+ff9ffead-7449-4d74-9674-f95994b9346b	factures	b294d7fb-9f0e-4565-b577-e06b7ce9735c	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:12.349117+00	\N	{"id": "b294d7fb-9f0e-4565-b577-e06b7ce9735c", "created_at": "2026-06-15 16:04:12.349117+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 16:04:12.349117+00:00", "commande_id": "afd7ad6c-776b-4c2c-9c6a-ce0134c65366", "montant_ttc": "198.50", "reference_id": "F0000000028", "date_emission": "2026-06-15 16:04:12.379940+00:00"}
+f9027429-56f3-4658-a3de-fc76596f833f	creances	89e42005-8e22-4562-812b-02b100466d58	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:12.349117+00	\N	{"id": "89e42005-8e22-4562-812b-02b100466d58", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:04:12.349117+00:00", "facture_id": "b294d7fb-9f0e-4565-b577-e06b7ce9735c", "updated_at": "2026-06-15 16:04:12.349117+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+97fd7ea6-fc92-4d5a-8003-f8451e74236f	bons_livraison	686b33f9-bca7-4dd3-a611-d3d14693642d	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:12.349117+00	\N	{"id": "686b33f9-bca7-4dd3-a611-d3d14693642d", "code_barre": "BL00000028", "created_at": "2026-06-15 16:04:12.349117+00:00", "updated_at": "2026-06-15 16:04:12.349117+00:00", "commande_id": "afd7ad6c-776b-4c2c-9c6a-ce0134c65366", "date_emission": "2026-06-15 16:04:12.379940+00:00"}
+128679c0-b142-4121-a778-3561035e50a6	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:12.349117+00	{"stock_quantity": "70"}	{"stock_quantity": "69"}
+821b27f0-cf78-4f40-a6c7-c6cc4ae7939f	commandes	5913d330-9751-4b2e-b4d8-1696ce89b897	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:14.558401+00	\N	{"id": "5913d330-9751-4b2e-b4d8-1696ce89b897", "statut": "creee", "created_at": "2026-06-15 16:04:14.558401+00:00", "updated_at": "2026-06-15 16:04:14.558401+00:00", "reference_id": "C00000050", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+71ffd4c5-3510-4d16-95b1-567eef2e436f	lignes_commande	6e9a75db-0b86-4ee8-a3a1-47e2285db9bf	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:14.558401+00	\N	{"id": "6e9a75db-0b86-4ee8-a3a1-47e2285db9bf", "verifie": "False", "created_at": "2026-06-15 16:04:14.558401+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:14.558401+00:00", "commande_id": "5913d330-9751-4b2e-b4d8-1696ce89b897", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+04eb014e-420d-407e-95d5-2d1ffb2c34d0	commandes	40505262-756a-49d3-9366-d9b9feb92cd6	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:18.57493+00	\N	{"id": "40505262-756a-49d3-9366-d9b9feb92cd6", "statut": "creee", "created_at": "2026-06-15 16:04:18.574930+00:00", "updated_at": "2026-06-15 16:04:18.574930+00:00", "reference_id": "C00000051", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+db97c2a9-e1b8-4a9d-9bdb-5cc2dbd942aa	lignes_commande	d185de14-cc16-41e7-a05f-72ad71b23edd	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:04:18.57493+00	\N	{"id": "d185de14-cc16-41e7-a05f-72ad71b23edd", "verifie": "False", "created_at": "2026-06-15 16:04:18.574930+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:18.574930+00:00", "commande_id": "40505262-756a-49d3-9366-d9b9feb92cd6", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+dbe66d3e-33f8-4dc0-919e-a119ef86ab1a	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:51.475748+00	\N	{"id": "a90de1fe-e8f3-4c96-8107-69eba971d1a8", "statut": "creee", "created_at": "2026-06-15 16:04:51.475748+00:00", "updated_at": "2026-06-15 16:04:51.475748+00:00", "reference_id": "C00000052", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+8b711d3e-c808-42ff-9d36-2158f789d2ee	lignes_commande	0769b497-f3ce-4e1b-887a-cea724ccd950	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:51.475748+00	\N	{"id": "0769b497-f3ce-4e1b-887a-cea724ccd950", "verifie": "False", "created_at": "2026-06-15 16:04:51.475748+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:51.475748+00:00", "commande_id": "a90de1fe-e8f3-4c96-8107-69eba971d1a8", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+379b8188-6d17-4a94-8b76-606d63d85c56	lignes_commande	fda13102-756e-4fac-8026-ee784d4324a5	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:51.475748+00	\N	{"id": "fda13102-756e-4fac-8026-ee784d4324a5", "verifie": "False", "created_at": "2026-06-15 16:04:51.475748+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:04:51.475748+00:00", "commande_id": "a90de1fe-e8f3-4c96-8107-69eba971d1a8", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}
+0c5665d6-b43d-4691-9a3a-e8d4976c0a07	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:51.786482+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:04:51.794467+00:00"}
+bfeaf3d0-26a3-48ac-8129-6a11fbaf49f4	factures	cbdeddeb-90ad-4a39-a18a-22d6fe271001	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:51.786482+00	\N	{"id": "cbdeddeb-90ad-4a39-a18a-22d6fe271001", "created_at": "2026-06-15 16:04:51.786482+00:00", "montant_ht": "852.58", "updated_at": "2026-06-15 16:04:51.786482+00:00", "commande_id": "a90de1fe-e8f3-4c96-8107-69eba971d1a8", "montant_ttc": "852.58", "reference_id": "F0000000029", "date_emission": "2026-06-15 16:04:51.819051+00:00"}
+b0cf6549-ab9e-451e-a05e-0d9eb1d61111	creances	e480aff8-9d2d-4b8c-9a1f-6abde50d4161	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:51.786482+00	\N	{"id": "e480aff8-9d2d-4b8c-9a1f-6abde50d4161", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:04:51.786482+00:00", "facture_id": "cbdeddeb-90ad-4a39-a18a-22d6fe271001", "updated_at": "2026-06-15 16:04:51.786482+00:00", "montant_paye": "0", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+e5692dc5-6945-4712-99fe-acfedbd1247a	bons_livraison	ab7b768b-8e0b-492a-9e15-0a97ed8854a2	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:51.786482+00	\N	{"id": "ab7b768b-8e0b-492a-9e15-0a97ed8854a2", "code_barre": "BL00000029", "created_at": "2026-06-15 16:04:51.786482+00:00", "updated_at": "2026-06-15 16:04:51.786482+00:00", "commande_id": "a90de1fe-e8f3-4c96-8107-69eba971d1a8", "date_emission": "2026-06-15 16:04:51.819051+00:00"}
+b3aa25f6-bfdb-45f8-8fe2-2c6dbf726450	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:51.786482+00	{"stock_quantity": "69"}	{"stock_quantity": "67"}
+0650aedd-b158-4eb9-822e-ef246b918e17	medicaments	592e33a9-acd2-410c-81f2-6cb3f8f17298	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:04:51.786482+00	{"stock_quantity": "12"}	{"stock_quantity": "11"}
+d0e5b7fc-24cc-40b7-985a-850f2367d07f	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:04:53.133031+00	{"preparateur_id": "None"}	{"preparateur_id": "3fce8dc2-16e0-4ce6-b41c-c0657216eb62"}
+7acaa549-61f3-4453-b145-c9b5ba381fdc	caddies_pool	802cd6c5-26bf-4d33-8599-a741f84c0a2c	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:04:53.133031+00	{"is_available": "True", "current_commande_id": "None"}	{"is_available": "False", "current_commande_id": "a90de1fe-e8f3-4c96-8107-69eba971d1a8"}
+0d55102f-bf84-478d-a0f8-a84decc9a576	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:04:53.133031+00	{"statut": "acceptee"}	{"statut": "en_preparation"}
+9d397d51-79d7-46f8-9fc2-78e6ae08906c	lignes_commande	0769b497-f3ce-4e1b-887a-cea724ccd950	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:04:53.693065+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "1"}
+3877d212-0ae3-456c-a1e0-d450758cc83d	lignes_commande	fda13102-756e-4fac-8026-ee784d4324a5	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:04:53.822503+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "1"}
+7cf5833c-8bdc-4230-acd7-cf793e37496d	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:04:53.946723+00	{"visa_preparateur": "None"}	{"visa_preparateur": "Preparateur"}
+5ccf5786-6725-4782-9801-29828a26d31d	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:04:53.946723+00	{"statut": "en_preparation"}	{"statut": "prelevee_partiellement"}
+7c9ba9cf-c9d6-4a21-a6c5-f1ac2efb286b	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:04:53.946723+00	{"statut": "prelevee_partiellement"}	{"statut": "en_verification"}
+5dca3154-dee7-48b2-bf5c-dd7a637ec14e	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:04:54.946266+00	{"camion_id": "None"}	{"camion_id": "0450c96e-c43b-47f9-bdd3-08e5a62b1ae7"}
+8c223cea-e69a-4f72-93ea-357bc4e6ef0a	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:04:54.946266+00	{"feuille_route_id": "None"}	{"feuille_route_id": "5afebd2a-5d57-469b-8dc1-1aaa3a437189"}
+686d9984-dc50-4166-a022-bdefba270d0a	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:04:55.104675+00	{"statut": "en_verification"}	{"statut": "prete"}
+6b509222-53c1-4a8c-ad2a-640b99fe6f7f	commandes	a90de1fe-e8f3-4c96-8107-69eba971d1a8	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:04:55.104675+00	{"nb_colis": "None", "visa_controleur": "None"}	{"nb_colis": "2", "visa_controleur": "Controleur"}
+c529f316-a02f-414e-b78a-356a9608e08f	colis	4566b695-b2c8-4009-b4a9-4fe8f9b2eb63	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:04:55.104675+00	\N	{"id": "4566b695-b2c8-4009-b4a9-4fe8f9b2eb63", "numero": "CLS00000010", "statut": "etiquete", "created_at": "2026-06-15 16:04:55.104675+00:00", "updated_at": "2026-06-15 16:04:55.104675+00:00", "commande_id": "a90de1fe-e8f3-4c96-8107-69eba971d1a8", "index_colis": "1"}
+d52566a9-4537-4d60-9595-df784ac0f537	colis	72aef3f2-1486-4cd7-915d-423bde41ef8c	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:04:55.104675+00	\N	{"id": "72aef3f2-1486-4cd7-915d-423bde41ef8c", "numero": "CLS00000011", "statut": "etiquete", "created_at": "2026-06-15 16:04:55.104675+00:00", "updated_at": "2026-06-15 16:04:55.104675+00:00", "commande_id": "a90de1fe-e8f3-4c96-8107-69eba971d1a8", "index_colis": "2"}
+61779262-06c6-4b56-8a83-18cd8527d607	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:12:09.835448+00	\N	{"id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "statut": "creee", "created_at": "2026-06-15 16:12:09.835448+00:00", "updated_at": "2026-06-15 16:12:09.835448+00:00", "reference_id": "C00000053", "montant_total": "1688.63", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+94d1aca4-80a6-4a64-9835-4ea5f0b4c583	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:15:34.950794+00	{"preparateur_id": "None"}	{"preparateur_id": "3fce8dc2-16e0-4ce6-b41c-c0657216eb62"}
+be5ad77b-8f2c-43a0-a07a-cfff7f2c8f30	lignes_commande	204c3a7d-2dc8-4fb7-bc1e-57490e63e96b	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:12:09.835448+00	\N	{"id": "204c3a7d-2dc8-4fb7-bc1e-57490e63e96b", "verifie": "False", "created_at": "2026-06-15 16:12:09.835448+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:12:09.835448+00:00", "commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "designation": "BIOCABASTINE 0,05℅ FL/5ML COLLYRE", "qte_demandee": "1", "medicament_id": "31b2d93c-67d9-4b01-98ec-c4c1130fc635", "prix_unitaire": "380.41"}
+69840d09-d827-4ac3-8451-edc5a6325d90	lignes_commande	3b8c1adf-c358-4229-a40d-f6f48230246a	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:12:09.835448+00	\N	{"id": "3b8c1adf-c358-4229-a40d-f6f48230246a", "verifie": "False", "created_at": "2026-06-15 16:12:09.835448+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:12:09.835448+00:00", "commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "designation": "BIOFENAC. 100MG B/10 SUPPO", "qte_demandee": "1", "medicament_id": "bd0ee39a-b886-4631-8dd9-50e77aef7b27", "prix_unitaire": "107.40"}
+dc7229b3-d97e-4bea-91b6-f9d40c8b9f4f	lignes_commande	11a85157-854d-4c78-b93b-1ca890b9bdce	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:12:09.835448+00	\N	{"id": "11a85157-854d-4c78-b93b-1ca890b9bdce", "verifie": "False", "created_at": "2026-06-15 16:12:09.835448+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:12:09.835448+00:00", "commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "designation": "BIOPAMOX. 250MG/5ML FL/60ML PDRE.P.SUSP.", "qte_demandee": "2", "medicament_id": "6ef1aae9-5d86-46ca-ae3e-dcd15e0ffceb", "prix_unitaire": "200.41"}
+8f0381eb-2779-4d56-a009-8ebd4f3ed42d	lignes_commande	34ac5d2b-6707-47f1-b7da-8ea9471fc223	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:12:09.835448+00	\N	{"id": "34ac5d2b-6707-47f1-b7da-8ea9471fc223", "verifie": "False", "created_at": "2026-06-15 16:12:09.835448+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:12:09.835448+00:00", "commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "designation": "CALCIDOSE 500MG B/30 SH", "qte_demandee": "2", "medicament_id": "3e947b0c-090b-468e-a135-344ba0de8b6a", "prix_unitaire": "400.00"}
+d353a765-7cea-4ef1-9ff0-7f9d096fe5b9	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:14:02.696749+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:14:02.731244+00:00"}
+5b0ded16-bbe1-4a71-bd8f-e7a2b395a55a	factures	73fb6564-1952-4140-b828-cd51002bad57	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:14:02.696749+00	\N	{"id": "73fb6564-1952-4140-b828-cd51002bad57", "created_at": "2026-06-15 16:14:02.696749+00:00", "montant_ht": "1688.63", "updated_at": "2026-06-15 16:14:02.696749+00:00", "commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "montant_ttc": "1688.63", "reference_id": "F0000000030", "date_emission": "2026-06-15 16:14:02.797822+00:00"}
+297ff144-fd3e-4889-9fd8-44fe7e937af3	creances	bdead561-912d-4c66-a819-2c2ab91d5560	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:14:02.696749+00	\N	{"id": "bdead561-912d-4c66-a819-2c2ab91d5560", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:14:02.696749+00:00", "facture_id": "73fb6564-1952-4140-b828-cd51002bad57", "updated_at": "2026-06-15 16:14:02.696749+00:00", "montant_paye": "0", "montant_total": "1688.63", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+81ea64bc-90ca-4c46-981f-c807f657abc6	bons_livraison	85891160-aa45-408f-af07-ec6f79743fed	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:14:02.696749+00	\N	{"id": "85891160-aa45-408f-af07-ec6f79743fed", "code_barre": "BL00000030", "created_at": "2026-06-15 16:14:02.696749+00:00", "updated_at": "2026-06-15 16:14:02.696749+00:00", "commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "date_emission": "2026-06-15 16:14:02.797822+00:00"}
+09b415a1-fd4a-4642-a692-0f708bcbb999	medicaments	3e947b0c-090b-468e-a135-344ba0de8b6a	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:14:02.696749+00	{"stock_quantity": "79"}	{"stock_quantity": "77"}
+31ad3441-9261-4fa5-987a-207425a215b9	medicaments	31b2d93c-67d9-4b01-98ec-c4c1130fc635	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:14:02.696749+00	{"stock_quantity": "195"}	{"stock_quantity": "194"}
+2705b9e5-dd36-4af7-8931-5133bc0c4119	medicaments	bd0ee39a-b886-4631-8dd9-50e77aef7b27	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:14:02.696749+00	{"stock_quantity": "184"}	{"stock_quantity": "183"}
+956189eb-484c-404c-ac11-b95f1c29f93c	medicaments	6ef1aae9-5d86-46ca-ae3e-dcd15e0ffceb	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:14:02.696749+00	{"stock_quantity": "187"}	{"stock_quantity": "185"}
+c87fcd8e-b010-4ca8-8c4a-1a64f6cc1a99	lignes_commande	204c3a7d-2dc8-4fb7-bc1e-57490e63e96b	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:15:39.497765+00	{"verifie": "False"}	{"verifie": "True"}
+fa915fa7-1e6e-47d6-99c4-365904ec7a4d	lignes_commande	11a85157-854d-4c78-b93b-1ca890b9bdce	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:15:41.192609+00	{"verifie": "False"}	{"verifie": "True"}
+59261e72-c271-405c-9a07-80370bae33e0	lignes_commande	204c3a7d-2dc8-4fb7-bc1e-57490e63e96b	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.259666+00	{"qte_prelevee": "None"}	{"qte_prelevee": "0"}
+62d6114a-393e-4723-b335-e268f47ce83e	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.882739+00	{"camion_id": "None"}	{"camion_id": "1c2411aa-1f09-4c5d-8360-96180f6b4c54"}
+565bfad0-4a7f-47fc-b244-fc6ff6c427f4	feuilles_route	777b09a3-e9bf-42bb-9187-bc037bf8af6e	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.882739+00	\N	{"id": "777b09a3-e9bf-42bb-9187-bc037bf8af6e", "date": "2026-06-15", "camion_id": "1c2411aa-1f09-4c5d-8360-96180f6b4c54", "compteurs": "{'colis_std': 0, 'sachets_std': 0, 'colis_frg': 0, 'sachets_frg': 0}", "created_at": "2026-06-15 16:20:36.882739+00:00", "updated_at": "2026-06-15 16:20:36.882739+00:00", "chargement_valide": "False"}
+d52643db-21c8-4887-9e68-cde7a4339fba	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.882739+00	{"feuille_route_id": "None"}	{"feuille_route_id": "777b09a3-e9bf-42bb-9187-bc037bf8af6e"}
+2c5fadb3-b517-4a4a-849e-dd5270ad1d6a	scans_colis	8f44b835-def6-4dbe-a86d-e7b23d8a3df7	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:26:50.871261+00	\N	{"id": "8f44b835-def6-4dbe-a86d-e7b23d8a3df7", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "2de3edd1-5302-4617-82c9-244ddb424b2e", "type_scan": "depot_pad", "created_at": "2026-06-15 16:26:50.871261+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 16:26:50.871261+00:00"}
+d124b192-1d82-430e-985a-349df8e3cdf6	colis	2de3edd1-5302-4617-82c9-244ddb424b2e	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:26:50.871261+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301"}
+15690984-ac80-44f1-8f17-8c6553819186	scans_colis	6cd0a172-5eb6-4b5a-8f43-2c63ac55d245	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:26:50.871261+00	\N	{"id": "6cd0a172-5eb6-4b5a-8f43-2c63ac55d245", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "4661cc5f-1c47-4c92-9bb3-9c8b8c2fd8db", "type_scan": "depot_pad", "created_at": "2026-06-15 16:26:50.871261+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 16:26:50.871261+00:00"}
+f72fc5de-420d-40ab-8649-00d908e0729a	colis	4661cc5f-1c47-4c92-9bb3-9c8b8c2fd8db	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:26:50.871261+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301"}
+e3ccfaeb-0d1d-44bc-ada1-7d3ab6095326	scans_colis	b8104947-7867-4ab6-854b-8e6616837562	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:26:50.871261+00	\N	{"id": "b8104947-7867-4ab6-854b-8e6616837562", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "867bbd1b-110a-470e-8f20-b02bb47529d1", "type_scan": "depot_pad", "created_at": "2026-06-15 16:26:50.871261+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 16:26:50.871261+00:00"}
+c8741b86-a21b-40d2-a2ed-a96ad7040122	colis	867bbd1b-110a-470e-8f20-b02bb47529d1	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:26:50.871261+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301"}
+c5f2d5ba-e8db-4606-ae6c-be77f1199a87	commandes	f619698f-e21f-4f0a-9fc3-e615b19b2d35	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:24.816121+00	{"lignes": "<app.models.commande.LigneCommande object at 0x000001ADB7C1FB60>", "montant_total": "1448.08"}	{"montant_total": "992.50"}
+03f37c50-b684-46a8-be1e-624296c78100	caddies_pool	802cd6c5-26bf-4d33-8599-a741f84c0a2c	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:15:34.950794+00	{"is_available": "True", "current_commande_id": "None"}	{"is_available": "False", "current_commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9"}
+b904ed54-ed06-4f2f-9f46-524c74a37231	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:15:34.950794+00	{"statut": "acceptee"}	{"statut": "en_preparation"}
+0e1bc023-2259-43a5-b1fc-7f63ee3c85fe	lignes_commande	3b8c1adf-c358-4229-a40d-f6f48230246a	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:15:40.161568+00	{"verifie": "False"}	{"verifie": "True"}
+1ab8c489-fc66-4c25-b084-6b7ccca18e81	lignes_commande	34ac5d2b-6707-47f1-b7da-8ea9471fc223	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:15:41.917834+00	{"verifie": "False"}	{"verifie": "True"}
+e815d801-f5b8-4762-800a-6863f06e72b9	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:15:46.987935+00	{"visa_preparateur": "None"}	{"visa_preparateur": "Preparateur"}
+e783b893-0f18-4d06-9298-5b4eaac8c5ae	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:15:46.987935+00	{"statut": "en_preparation"}	{"statut": "prelevee_partiellement"}
+b77afdb0-fb95-4bb3-8f28-c6eb2c471990	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:15:46.987935+00	{"statut": "prelevee_partiellement"}	{"statut": "en_verification"}
+dd9b5ef6-d5c4-4c27-a0b9-4995b6126098	lignes_commande	3b8c1adf-c358-4229-a40d-f6f48230246a	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.358585+00	{"qte_prelevee": "None"}	{"qte_prelevee": "0"}
+7f1d608a-14d4-48cc-bf96-85932f0080fb	lignes_commande	11a85157-854d-4c78-b93b-1ca890b9bdce	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.471429+00	{"qte_prelevee": "None"}	{"qte_prelevee": "0"}
+af02fcdd-2106-4d1d-bfbd-7c385e41a3d5	lignes_commande	34ac5d2b-6707-47f1-b7da-8ea9471fc223	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.520681+00	{"qte_prelevee": "None"}	{"qte_prelevee": "0"}
+65fd560e-ad1b-4967-bbb8-e27c552b19ea	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.975657+00	{"statut": "en_verification"}	{"statut": "prete"}
+69ada57c-50d4-48c7-9f2f-7300f931b41d	commandes	70932ee6-bdba-4e93-b487-e0e51c7452f9	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.975657+00	{"nb_colis": "None", "visa_controleur": "None"}	{"nb_colis": "4", "visa_controleur": "Controleur"}
+aa7601c1-fa93-45f7-bd94-f580879865ec	colis	2de3edd1-5302-4617-82c9-244ddb424b2e	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.975657+00	\N	{"id": "2de3edd1-5302-4617-82c9-244ddb424b2e", "numero": "CLS00000012", "statut": "etiquete", "created_at": "2026-06-15 16:20:36.975657+00:00", "updated_at": "2026-06-15 16:20:36.975657+00:00", "commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "index_colis": "1"}
+ce12d52f-29ff-4b83-87f1-d679de53a24b	colis	4661cc5f-1c47-4c92-9bb3-9c8b8c2fd8db	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.975657+00	\N	{"id": "4661cc5f-1c47-4c92-9bb3-9c8b8c2fd8db", "numero": "CLS00000013", "statut": "etiquete", "created_at": "2026-06-15 16:20:36.975657+00:00", "updated_at": "2026-06-15 16:20:36.975657+00:00", "commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "index_colis": "2"}
+e6e64746-10d5-4dd1-83f6-bcc730f6b408	colis	867bbd1b-110a-470e-8f20-b02bb47529d1	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.975657+00	\N	{"id": "867bbd1b-110a-470e-8f20-b02bb47529d1", "numero": "CLS00000014", "statut": "etiquete", "created_at": "2026-06-15 16:20:36.975657+00:00", "updated_at": "2026-06-15 16:20:36.975657+00:00", "commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "index_colis": "3"}
+9463875e-587d-4325-b3be-063ff6ee8d7a	colis	4a0a17aa-fd5a-4a1c-bca8-0788e764aed6	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:20:36.975657+00	\N	{"id": "4a0a17aa-fd5a-4a1c-bca8-0788e764aed6", "numero": "CLS00000015", "statut": "etiquete", "created_at": "2026-06-15 16:20:36.975657+00:00", "updated_at": "2026-06-15 16:20:36.975657+00:00", "commande_id": "70932ee6-bdba-4e93-b487-e0e51c7452f9", "index_colis": "4"}
+340bb857-d4c9-47db-a4a0-3703cf4b6f08	feuilles_route	5afebd2a-5d57-469b-8dc1-1aaa3a437189	update	ef6fb6ab-1b1a-41ea-bf5a-658502d156f7	2026-06-15 16:29:07.330988+00	{"livreur_id": "None"}	{"livreur_id": "ef6fb6ab-1b1a-41ea-bf5a-658502d156f7"}
+eda38336-2de9-4937-911c-851f3fba2c96	scans_colis	58ba8474-4625-41c9-bdf3-099e9be1fe66	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:26:50.871261+00	\N	{"id": "58ba8474-4625-41c9-bdf3-099e9be1fe66", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "4a0a17aa-fd5a-4a1c-bca8-0788e764aed6", "type_scan": "depot_pad", "created_at": "2026-06-15 16:26:50.871261+00:00", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301", "updated_at": "2026-06-15 16:26:50.871261+00:00"}
+5255cb3b-8a8f-410a-9d6a-218392c2eb3d	colis	4a0a17aa-fd5a-4a1c-bca8-0788e764aed6	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:26:50.871261+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "9b9f4153-1b16-4704-975c-8090f9e6e301"}
+3a69113a-ac3b-46ca-8020-a1039fca30e8	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:18.567044+00	\N	{"id": "c7c6368e-e59a-49c9-b59d-1c42c7f6d935", "statut": "creee", "created_at": "2026-06-15 16:43:18.567044+00:00", "updated_at": "2026-06-15 16:43:18.567044+00:00", "reference_id": "C00000054", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+8357e067-951f-4c0b-93b8-c71e8ac8ce1e	lignes_commande	7282c955-27be-4c16-8858-3f47ab3705c2	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:18.567044+00	\N	{"id": "7282c955-27be-4c16-8858-3f47ab3705c2", "verifie": "False", "created_at": "2026-06-15 16:43:18.567044+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:18.567044+00:00", "commande_id": "c7c6368e-e59a-49c9-b59d-1c42c7f6d935", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+7e07d74c-0c25-4027-b8a4-bfb4965ed624	lignes_commande	7ac9cea4-44f2-48f4-a660-8a4d39f85212	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:18.567044+00	\N	{"id": "7ac9cea4-44f2-48f4-a660-8a4d39f85212", "verifie": "False", "created_at": "2026-06-15 16:43:18.567044+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:18.567044+00:00", "commande_id": "c7c6368e-e59a-49c9-b59d-1c42c7f6d935", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}
+d9037cb0-2298-4254-9ff9-f39615d2e435	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:18.644412+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:43:18.653643+00:00"}
+d3cacc31-c86e-4ffa-b775-1ea6e2538846	factures	bc33a881-5a97-4eee-a342-ac5d750f0c03	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:18.644412+00	\N	{"id": "bc33a881-5a97-4eee-a342-ac5d750f0c03", "created_at": "2026-06-15 16:43:18.644412+00:00", "montant_ht": "852.58", "updated_at": "2026-06-15 16:43:18.644412+00:00", "commande_id": "c7c6368e-e59a-49c9-b59d-1c42c7f6d935", "montant_ttc": "852.58", "reference_id": "F0000000031", "date_emission": "2026-06-15 16:43:18.690721+00:00"}
+5e7a8f0d-65a3-496c-8faf-4ede96331520	creances	3d207881-2cad-4c03-b44d-d92a8e076803	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:18.644412+00	\N	{"id": "3d207881-2cad-4c03-b44d-d92a8e076803", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:43:18.644412+00:00", "facture_id": "bc33a881-5a97-4eee-a342-ac5d750f0c03", "updated_at": "2026-06-15 16:43:18.644412+00:00", "montant_paye": "0", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+4eaf1dda-a0b6-4038-88bd-5a3cb65db339	bons_livraison	af674db5-5919-443c-b929-7bb0fab7e6cf	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:18.644412+00	\N	{"id": "af674db5-5919-443c-b929-7bb0fab7e6cf", "code_barre": "BL00000031", "created_at": "2026-06-15 16:43:18.644412+00:00", "updated_at": "2026-06-15 16:43:18.644412+00:00", "commande_id": "c7c6368e-e59a-49c9-b59d-1c42c7f6d935", "date_emission": "2026-06-15 16:43:18.690721+00:00"}
+b8f7af16-e3de-487e-89d1-2b0b9fbb4a01	medicaments	592e33a9-acd2-410c-81f2-6cb3f8f17298	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:18.644412+00	{"stock_quantity": "11"}	{"stock_quantity": "10"}
+51928e55-9e0c-4d89-a82d-1813ee9a1f3e	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:18.644412+00	{"stock_quantity": "67"}	{"stock_quantity": "65"}
+2e8a2a18-c4dd-47f8-bfe1-bb0671a105fc	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:43:19.224925+00	{"preparateur_id": "None"}	{"preparateur_id": "3fce8dc2-16e0-4ce6-b41c-c0657216eb62"}
+24e2fb58-de05-4c4f-92d3-016d5af3e6d6	caddies_pool	802cd6c5-26bf-4d33-8599-a741f84c0a2c	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:43:19.224925+00	{"is_available": "True", "current_commande_id": "None"}	{"is_available": "False", "current_commande_id": "c7c6368e-e59a-49c9-b59d-1c42c7f6d935"}
+631f8cd7-61e1-4314-883f-5beeb0f2e6fa	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:43:19.224925+00	{"statut": "acceptee"}	{"statut": "en_preparation"}
+4b0bd479-4a85-4a07-8ae6-ac86143bf56a	lignes_commande	7282c955-27be-4c16-8858-3f47ab3705c2	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:43:19.311316+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "2"}
+d410be1d-33a4-4892-9902-c98dd2fb894a	lignes_commande	7ac9cea4-44f2-48f4-a660-8a4d39f85212	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:43:19.344007+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "1"}
+523f438c-5f01-4679-86fa-9a1f3b84e084	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:43:19.365924+00	{"visa_preparateur": "None"}	{"visa_preparateur": "Preparateur"}
+9bc5e6f4-f9e6-447f-b7ad-a8990caf9f99	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:43:19.365924+00	{"statut": "en_preparation"}	{"statut": "en_verification"}
+bbce7d74-5761-4719-8cf9-c55dbf4981ac	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:43:19.828194+00	{"camion_id": "None"}	{"camion_id": "0450c96e-c43b-47f9-bdd3-08e5a62b1ae7"}
+280cf6a0-3e99-40bb-8654-89c9a4a69967	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:43:19.828194+00	{"feuille_route_id": "None"}	{"feuille_route_id": "5afebd2a-5d57-469b-8dc1-1aaa3a437189"}
+c9972c74-6fa0-4608-890a-ea780808f990	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:43:19.876809+00	{"statut": "en_verification"}	{"statut": "prete"}
+0cd32d05-3f9d-46d2-9a1b-04864c7da249	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:43:19.876809+00	{"nb_colis": "None", "visa_controleur": "None"}	{"nb_colis": "3", "visa_controleur": "Controleur"}
+47033c37-296c-4868-b11c-9ab3d71c64ea	colis	d0dc8e6f-1b06-4d71-8dac-5d5abae4d120	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:43:19.876809+00	\N	{"id": "d0dc8e6f-1b06-4d71-8dac-5d5abae4d120", "numero": "CLS00000016", "statut": "etiquete", "created_at": "2026-06-15 16:43:19.876809+00:00", "updated_at": "2026-06-15 16:43:19.876809+00:00", "commande_id": "c7c6368e-e59a-49c9-b59d-1c42c7f6d935", "index_colis": "1"}
+035a29b6-7b29-450d-8cc1-5e498ccbdfdc	colis	d6fd0be7-837c-43b0-9430-27781bf63503	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:43:19.876809+00	\N	{"id": "d6fd0be7-837c-43b0-9430-27781bf63503", "numero": "CLS00000017", "statut": "etiquete", "created_at": "2026-06-15 16:43:19.876809+00:00", "updated_at": "2026-06-15 16:43:19.876809+00:00", "commande_id": "c7c6368e-e59a-49c9-b59d-1c42c7f6d935", "index_colis": "2"}
+0cb37d68-df14-406d-b03d-42678f923696	colis	1e0ede6a-53e5-485f-8fca-ca781bdcbda6	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:43:19.876809+00	\N	{"id": "1e0ede6a-53e5-485f-8fca-ca781bdcbda6", "numero": "CLS00000018", "statut": "etiquete", "created_at": "2026-06-15 16:43:19.876809+00:00", "updated_at": "2026-06-15 16:43:19.876809+00:00", "commande_id": "c7c6368e-e59a-49c9-b59d-1c42c7f6d935", "index_colis": "3"}
+168a0282-0fcc-480e-ac07-7f5616b585f8	scans_colis	0ba86321-7610-4df3-9896-dc60b676ce07	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:43:20.45776+00	\N	{"id": "0ba86321-7610-4df3-9896-dc60b676ce07", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "d0dc8e6f-1b06-4d71-8dac-5d5abae4d120", "type_scan": "depot_pad", "created_at": "2026-06-15 16:43:20.457760+00:00", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb", "updated_at": "2026-06-15 16:43:20.457760+00:00"}
+9583d52d-469a-4ef4-9c0a-a24ff9c7c6c0	colis	d0dc8e6f-1b06-4d71-8dac-5d5abae4d120	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:43:20.45776+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb"}
+3c36fe0b-af15-4b93-9db4-e5aa12ecce87	scans_colis	4335f790-c968-4559-8856-beefd0e423ba	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:43:20.539115+00	\N	{"id": "4335f790-c968-4559-8856-beefd0e423ba", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "d6fd0be7-837c-43b0-9430-27781bf63503", "type_scan": "depot_pad", "created_at": "2026-06-15 16:43:20.539115+00:00", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb", "updated_at": "2026-06-15 16:43:20.539115+00:00"}
+20617fa3-d273-45a6-96b0-4bf6668ef0ce	colis	d6fd0be7-837c-43b0-9430-27781bf63503	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:43:20.539115+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb"}
+1b1e6f31-4dcc-40aa-b916-85a2b5cc4467	scans_colis	9f5f720f-99d1-4410-97d1-cc72fce46f80	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:43:20.571677+00	\N	{"id": "9f5f720f-99d1-4410-97d1-cc72fce46f80", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "1e0ede6a-53e5-485f-8fca-ca781bdcbda6", "type_scan": "depot_pad", "created_at": "2026-06-15 16:43:20.571677+00:00", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb", "updated_at": "2026-06-15 16:43:20.571677+00:00"}
+71d81ab1-c6ce-492b-adea-b5df5ac84520	colis	1e0ede6a-53e5-485f-8fca-ca781bdcbda6	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:43:20.571677+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb"}
+a983b783-c60a-4308-a864-662e83a6d12d	scans_colis	9784c2eb-6f42-4206-8992-50e27e66821e	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.051832+00	\N	{"id": "9784c2eb-6f42-4206-8992-50e27e66821e", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "d0dc8e6f-1b06-4d71-8dac-5d5abae4d120", "type_scan": "chargement", "created_at": "2026-06-15 16:43:21.051832+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:43:21.051832+00:00"}
+2d46a213-feff-44fe-9d5b-d74479390e95	colis	d0dc8e6f-1b06-4d71-8dac-5d5abae4d120	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.051832+00	{"statut": "sur_pad"}	{"statut": "charge"}
+cc9551a4-dca8-455b-bd0f-ed4111b2636d	scans_colis	8faa2893-9430-46a9-a789-6eeaad0398de	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.112805+00	\N	{"id": "8faa2893-9430-46a9-a789-6eeaad0398de", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "d6fd0be7-837c-43b0-9430-27781bf63503", "type_scan": "chargement", "created_at": "2026-06-15 16:43:21.112805+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:43:21.112805+00:00"}
+895eb2d8-cd7d-4a86-93a6-ba7eaebb1bb7	colis	d6fd0be7-837c-43b0-9430-27781bf63503	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.112805+00	{"statut": "sur_pad"}	{"statut": "charge"}
+b5d4397b-77ea-4364-9369-8e6c6e86a0b9	scans_colis	b074dc1e-c132-40f2-9070-0d66659935ee	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.145062+00	\N	{"id": "b074dc1e-c132-40f2-9070-0d66659935ee", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "1e0ede6a-53e5-485f-8fca-ca781bdcbda6", "type_scan": "chargement", "created_at": "2026-06-15 16:43:21.145062+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:43:21.145062+00:00"}
+0ca7aa40-4e3f-43ae-852e-8ea1bb399d91	colis	1e0ede6a-53e5-485f-8fca-ca781bdcbda6	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.145062+00	{"statut": "sur_pad"}	{"statut": "charge"}
+b6493f93-78b6-42a5-8c1d-6e5f56ccde1d	commandes	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.268378+00	{"statut": "prete"}	{"statut": "en_route"}
+38502199-eb83-47da-baf6-2d617df7d1a9	scans_colis	d1f44a9a-726f-40f2-8156-e51c050b5518	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.308159+00	\N	{"id": "d1f44a9a-726f-40f2-8156-e51c050b5518", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "d0dc8e6f-1b06-4d71-8dac-5d5abae4d120", "type_scan": "livraison", "created_at": "2026-06-15 16:43:21.308159+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:43:21.308159+00:00"}
+be1574fc-735c-44ae-a2fd-c2c1e8909a0d	colis	d0dc8e6f-1b06-4d71-8dac-5d5abae4d120	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.308159+00	{"statut": "charge"}	{"statut": "livre"}
+f605d073-0cb7-43a5-9346-be9847dae5d0	scans_colis	0e1d383d-92f9-4cb5-907e-c1053bba7d1c	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.353342+00	\N	{"id": "0e1d383d-92f9-4cb5-907e-c1053bba7d1c", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "d6fd0be7-837c-43b0-9430-27781bf63503", "type_scan": "livraison", "created_at": "2026-06-15 16:43:21.353342+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:43:21.353342+00:00"}
+1e821e77-3d17-4839-82ca-7b790a2938a8	colis	d6fd0be7-837c-43b0-9430-27781bf63503	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.353342+00	{"statut": "charge"}	{"statut": "livre"}
+6281d92f-9470-4c69-8e32-ff465a268787	scans_colis	19b71c24-d246-42a9-9730-d2b80db4500d	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.388009+00	\N	{"id": "19b71c24-d246-42a9-9730-d2b80db4500d", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "1e0ede6a-53e5-485f-8fca-ca781bdcbda6", "type_scan": "livraison", "created_at": "2026-06-15 16:43:21.388009+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:43:21.388009+00:00"}
+b7983957-fd94-4eaa-8f0d-04c009cc93ef	colis	1e0ede6a-53e5-485f-8fca-ca781bdcbda6	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:21.388009+00	{"statut": "charge"}	{"statut": "livre"}
+967873f0-e2de-44ce-a689-c9a8510d652e	commandes	0b133ab5-eeb5-42b1-8079-3e31ad4f13aa	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:23.151611+00	\N	{"id": "0b133ab5-eeb5-42b1-8079-3e31ad4f13aa", "statut": "creee", "created_at": "2026-06-15 16:43:23.151611+00:00", "updated_at": "2026-06-15 16:43:23.151611+00:00", "reference_id": "C00000055", "montant_total": "397.00", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+0f75ff24-4fdd-4bb4-a503-c141b4d352b3	lignes_commande	ca6b987a-7509-444a-b784-06147ba6c4ab	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:23.151611+00	\N	{"id": "ca6b987a-7509-444a-b784-06147ba6c4ab", "verifie": "False", "created_at": "2026-06-15 16:43:23.151611+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:23.151611+00:00", "commande_id": "0b133ab5-eeb5-42b1-8079-3e31ad4f13aa", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+20bb6f9f-6a3e-4a7a-adda-63b2ac7da143	commandes	f619698f-e21f-4f0a-9fc3-e615b19b2d35	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:24.668551+00	\N	{"id": "f619698f-e21f-4f0a-9fc3-e615b19b2d35", "statut": "creee", "created_at": "2026-06-15 16:43:24.668551+00:00", "updated_at": "2026-06-15 16:43:24.668551+00:00", "reference_id": "C00000056", "montant_total": "397.00", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+cf262224-ff24-4fe8-bbaa-503cc3d1847a	lignes_commande	eaf545e9-3d5e-4870-976e-d8ff41dbf25d	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:24.668551+00	\N	{"id": "eaf545e9-3d5e-4870-976e-d8ff41dbf25d", "verifie": "False", "created_at": "2026-06-15 16:43:24.668551+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:24.668551+00:00", "commande_id": "f619698f-e21f-4f0a-9fc3-e615b19b2d35", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+ac9165ba-04ee-43df-8a78-869aab69cb2c	commandes	f619698f-e21f-4f0a-9fc3-e615b19b2d35	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:24.710552+00	{"montant_total": "397.00"}	{"montant_total": "992.50"}
+942fd14b-dfee-43e2-965d-127ba4e66b4c	lignes_commande	eaf545e9-3d5e-4870-976e-d8ff41dbf25d	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:24.710552+00	{"qte_demandee": "2"}	{"qte_demandee": "5"}
+529a3c07-6e22-432b-b749-69530397f4c5	lignes_commande	78473063-efc5-44a4-8ce7-5345dd4ccd57	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:24.767247+00	\N	{"id": "78473063-efc5-44a4-8ce7-5345dd4ccd57", "verifie": "False", "created_at": "2026-06-15 16:43:24.767247+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:24.767247+00:00", "commande_id": "f619698f-e21f-4f0a-9fc3-e615b19b2d35", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}
+00250e1f-06e4-4a7b-bb54-ff2a4a2a6451	commandes	f619698f-e21f-4f0a-9fc3-e615b19b2d35	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:24.767247+00	{"montant_total": "992.50"}	{"lignes": "<app.models.commande.LigneCommande object at 0x000001ADB7C1FC50>", "montant_total": "1448.08"}
+d2e28247-499b-4779-8b60-2738dbe96c40	commandes	a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:31.221183+00	{"operatrice_comment": "None"}	{"operatrice_comment": "Quantité erronée, merci de corriger la ligne 1"}
+c3e22596-c7d3-4cd5-94e8-97fd7ca03b0e	lignes_commande	78473063-efc5-44a4-8ce7-5345dd4ccd57	delete	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:24.816121+00	{"id": "78473063-efc5-44a4-8ce7-5345dd4ccd57", "exp": "None", "fab": "None", "ppa": "None", "n_lot": "None", "verifie": "False", "remise_pct": "0.00", "commande_id": "f619698f-e21f-4f0a-9fc3-e615b19b2d35", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "qte_prelevee": "None", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}	\N
+2e432163-d375-4756-9c3c-74b80f12b7de	commandes	fbceed4c-73b9-475f-9ebc-48f2aed910f9	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:26.219427+00	\N	{"id": "fbceed4c-73b9-475f-9ebc-48f2aed910f9", "statut": "creee", "created_at": "2026-06-15 16:43:26.219427+00:00", "updated_at": "2026-06-15 16:43:26.219427+00:00", "reference_id": "C00000057", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+1967238a-21e2-4837-8bd5-23c2acb64a71	lignes_commande	c9f600b0-a245-4e57-90e9-4bfc86cea201	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:26.219427+00	\N	{"id": "c9f600b0-a245-4e57-90e9-4bfc86cea201", "verifie": "False", "created_at": "2026-06-15 16:43:26.219427+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:26.219427+00:00", "commande_id": "fbceed4c-73b9-475f-9ebc-48f2aed910f9", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+74c98d99-3e0b-48ea-8787-70108b0a3409	commandes	fbceed4c-73b9-475f-9ebc-48f2aed910f9	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:26.251427+00	{"statut": "creee"}	{"statut": "annulee"}
+43a78b46-d9bd-41b6-9db0-4762d03b2a04	commandes	9d504663-a4f6-4855-bdec-407cfabc199a	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:27.547502+00	\N	{"id": "9d504663-a4f6-4855-bdec-407cfabc199a", "statut": "creee", "created_at": "2026-06-15 16:43:27.547502+00:00", "updated_at": "2026-06-15 16:43:27.547502+00:00", "reference_id": "C00000058", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+2173fb55-8fd6-4ed1-8f4e-dbbd1ca21514	lignes_commande	ee77f140-f7ab-4904-bd59-564c6295027b	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:27.547502+00	\N	{"id": "ee77f140-f7ab-4904-bd59-564c6295027b", "verifie": "False", "created_at": "2026-06-15 16:43:27.547502+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:27.547502+00:00", "commande_id": "9d504663-a4f6-4855-bdec-407cfabc199a", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+eff08351-c082-4f67-8431-b4ed08860fed	commandes	9d504663-a4f6-4855-bdec-407cfabc199a	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:27.985656+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:43:27.996310+00:00"}
+c6531cd4-fa6c-49f7-afd0-cbebd8b396b2	factures	b9f235d9-8e88-48a3-b54a-2a8d608a53c8	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:27.985656+00	\N	{"id": "b9f235d9-8e88-48a3-b54a-2a8d608a53c8", "created_at": "2026-06-15 16:43:27.985656+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 16:43:27.985656+00:00", "commande_id": "9d504663-a4f6-4855-bdec-407cfabc199a", "montant_ttc": "198.50", "reference_id": "F0000000032", "date_emission": "2026-06-15 16:43:28.020842+00:00"}
+1ee00ec3-b622-4020-9b64-76e7ace1048c	creances	2698d758-aad2-44f1-9264-51b946b65cb1	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:27.985656+00	\N	{"id": "2698d758-aad2-44f1-9264-51b946b65cb1", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:43:27.985656+00:00", "facture_id": "b9f235d9-8e88-48a3-b54a-2a8d608a53c8", "updated_at": "2026-06-15 16:43:27.985656+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+e37bd476-89d4-4ec4-9dad-389f9e6ce27c	bons_livraison	563a9d1e-5c07-432f-9483-eefc34b5dbec	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:27.985656+00	\N	{"id": "563a9d1e-5c07-432f-9483-eefc34b5dbec", "code_barre": "BL00000032", "created_at": "2026-06-15 16:43:27.985656+00:00", "updated_at": "2026-06-15 16:43:27.985656+00:00", "commande_id": "9d504663-a4f6-4855-bdec-407cfabc199a", "date_emission": "2026-06-15 16:43:28.020842+00:00"}
+166f802e-f7d8-423a-a9f2-b98f44d28695	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:27.985656+00	{"stock_quantity": "65"}	{"stock_quantity": "64"}
+e12f61cd-f4f0-43c6-952a-2dcb2ab960e0	commandes	54d4a168-cd3c-4ad7-8531-def1a75875e3	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:29.803905+00	\N	{"id": "54d4a168-cd3c-4ad7-8531-def1a75875e3", "statut": "creee", "created_at": "2026-06-15 16:43:29.803905+00:00", "updated_at": "2026-06-15 16:43:29.803905+00:00", "reference_id": "C00000059", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+7e1719e0-4f57-4b07-ba33-28a98ea9bc13	lignes_commande	f37d5673-e4c2-4b2d-a2da-0dc8c6fac4d6	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:29.803905+00	\N	{"id": "f37d5673-e4c2-4b2d-a2da-0dc8c6fac4d6", "verifie": "False", "created_at": "2026-06-15 16:43:29.803905+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:29.803905+00:00", "commande_id": "54d4a168-cd3c-4ad7-8531-def1a75875e3", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+c7f84d33-950d-4577-9184-c866ccb71e78	commandes	54d4a168-cd3c-4ad7-8531-def1a75875e3	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:29.840087+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:43:29.848599+00:00"}
+7d07fafb-1085-4cd7-b54e-c91dd1f22b8c	factures	17075960-1745-48e1-ad66-0f1508214537	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:29.840087+00	\N	{"id": "17075960-1745-48e1-ad66-0f1508214537", "created_at": "2026-06-15 16:43:29.840087+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 16:43:29.840087+00:00", "commande_id": "54d4a168-cd3c-4ad7-8531-def1a75875e3", "montant_ttc": "198.50", "reference_id": "F0000000033", "date_emission": "2026-06-15 16:43:29.866499+00:00"}
+519f2ab7-6a8c-4dad-9d0e-9d6289b010bb	creances	ac34b4e2-ebb4-420a-a56e-984476235897	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:29.840087+00	\N	{"id": "ac34b4e2-ebb4-420a-a56e-984476235897", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:43:29.840087+00:00", "facture_id": "17075960-1745-48e1-ad66-0f1508214537", "updated_at": "2026-06-15 16:43:29.840087+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+8aa31eca-3d52-45ee-9dff-0580e07c0397	bons_livraison	669507e6-443d-44d4-a364-6011d0ed0d9b	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:29.840087+00	\N	{"id": "669507e6-443d-44d4-a364-6011d0ed0d9b", "code_barre": "BL00000033", "created_at": "2026-06-15 16:43:29.840087+00:00", "updated_at": "2026-06-15 16:43:29.840087+00:00", "commande_id": "54d4a168-cd3c-4ad7-8531-def1a75875e3", "date_emission": "2026-06-15 16:43:29.866499+00:00"}
+5bcde08d-7ab1-4d2f-a5b6-a242317f8ce8	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:29.840087+00	{"stock_quantity": "64"}	{"stock_quantity": "63"}
+51fe73ca-ecb2-4880-bebb-d1a11daccd37	commandes	a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:31.18495+00	\N	{"id": "a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd", "statut": "creee", "created_at": "2026-06-15 16:43:31.184950+00:00", "updated_at": "2026-06-15 16:43:31.184950+00:00", "reference_id": "C00000060", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+fb7f3e5e-015d-4b4b-8104-06342ab7d869	lignes_commande	41375fc8-b629-4e29-9a1c-04b609bfc8ba	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:31.18495+00	\N	{"id": "41375fc8-b629-4e29-9a1c-04b609bfc8ba", "verifie": "False", "created_at": "2026-06-15 16:43:31.184950+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:31.184950+00:00", "commande_id": "a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+18ba2bdb-a226-4ee2-875a-70d959972c21	commandes	a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:31.265314+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:43:31.272025+00:00"}
+e28eee16-0c89-4a91-857a-59f37fec7284	factures	ac1b4eee-b02c-42bd-a3cd-3856df14b813	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:31.265314+00	\N	{"id": "ac1b4eee-b02c-42bd-a3cd-3856df14b813", "created_at": "2026-06-15 16:43:31.265314+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 16:43:31.265314+00:00", "commande_id": "a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd", "montant_ttc": "198.50", "reference_id": "F0000000034", "date_emission": "2026-06-15 16:43:31.290620+00:00"}
+49142b61-6255-44aa-a5c5-13e0987a81f9	creances	6acf13a0-dcdf-4c18-b3f7-565ab1d8f76b	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:31.265314+00	\N	{"id": "6acf13a0-dcdf-4c18-b3f7-565ab1d8f76b", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:43:31.265314+00:00", "facture_id": "ac1b4eee-b02c-42bd-a3cd-3856df14b813", "updated_at": "2026-06-15 16:43:31.265314+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+761f6ce6-5084-4777-91ac-b24377554971	bons_livraison	5ed5c26e-f9e5-4f2a-bc91-05a9d9427876	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:31.265314+00	\N	{"id": "5ed5c26e-f9e5-4f2a-bc91-05a9d9427876", "code_barre": "BL00000034", "created_at": "2026-06-15 16:43:31.265314+00:00", "updated_at": "2026-06-15 16:43:31.265314+00:00", "commande_id": "a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd", "date_emission": "2026-06-15 16:43:31.290620+00:00"}
+7218d983-e595-4419-a6db-671600e8d14f	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:43:31.265314+00	{"stock_quantity": "63"}	{"stock_quantity": "62"}
+1a529e6f-4bea-4b2f-b4eb-bcd20764545a	commandes	2a5a4167-cccc-4d00-87b1-0eff74f20216	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:32.672836+00	\N	{"id": "2a5a4167-cccc-4d00-87b1-0eff74f20216", "statut": "creee", "created_at": "2026-06-15 16:43:32.672836+00:00", "updated_at": "2026-06-15 16:43:32.672836+00:00", "reference_id": "C00000061", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+6818211b-5199-4f78-8161-e451864bfd47	lignes_commande	5b03ce82-f035-4ecd-8e8e-954d86c02ce3	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:32.672836+00	\N	{"id": "5b03ce82-f035-4ecd-8e8e-954d86c02ce3", "verifie": "False", "created_at": "2026-06-15 16:43:32.672836+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:32.672836+00:00", "commande_id": "2a5a4167-cccc-4d00-87b1-0eff74f20216", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+d9e072fd-a254-40c0-9bfa-51bb9bf79942	commandes	b705c340-b2ca-4528-91b2-f3ca83436d38	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:35.410846+00	\N	{"id": "b705c340-b2ca-4528-91b2-f3ca83436d38", "statut": "creee", "created_at": "2026-06-15 16:43:35.410846+00:00", "updated_at": "2026-06-15 16:43:35.410846+00:00", "reference_id": "C00000062", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+f4ba4396-78d6-4d68-a9f6-18745affa21c	lignes_commande	661be1fa-95fd-40cd-8654-cc14c2a0ebf0	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:43:35.410846+00	\N	{"id": "661be1fa-95fd-40cd-8654-cc14c2a0ebf0", "verifie": "False", "created_at": "2026-06-15 16:43:35.410846+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:43:35.410846+00:00", "commande_id": "b705c340-b2ca-4528-91b2-f3ca83436d38", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+eac921cd-6e79-481d-b27e-d0b12f5f70ba	users	6d4d8a0c-d618-4646-867d-4b833a795014	insert	\N	2026-06-15 16:52:39.014428+00	\N	{"id": "6d4d8a0c-d618-4646-867d-4b833a795014", "nom": "Facturier Demo", "role": "facturier", "email": "facturier@dimed.dz", "is_active": "True", "created_at": "2026-06-15 16:52:39.014428+00:00", "updated_at": "2026-06-15 16:52:39.014428+00:00", "password_hash": "***", "is_email_verified": "True"}
+f3c2d690-2361-4ff7-82fa-5508989002ae	users	bd50ef77-a84a-4aaf-9cbe-4cfeb883046f	insert	\N	2026-06-15 16:52:39.014428+00	\N	{"id": "bd50ef77-a84a-4aaf-9cbe-4cfeb883046f", "nom": "Livreur 1", "role": "livreur", "email": "livreur1@dimed.dz", "is_active": "True", "created_at": "2026-06-15 16:52:39.014428+00:00", "updated_at": "2026-06-15 16:52:39.014428+00:00", "password_hash": "***", "is_email_verified": "True"}
+afd3190f-2aed-4aff-afc2-75a4431ede7d	users	7d837426-095a-4af0-a2e4-7f83a7872bd6	insert	\N	2026-06-15 16:52:39.014428+00	\N	{"id": "7d837426-095a-4af0-a2e4-7f83a7872bd6", "nom": "Livreur 2", "role": "livreur", "email": "livreur2@dimed.dz", "is_active": "True", "created_at": "2026-06-15 16:52:39.014428+00:00", "updated_at": "2026-06-15 16:52:39.014428+00:00", "password_hash": "***", "is_email_verified": "True"}
+bf92fce3-af77-449c-9393-17e74154147d	users	acd6c8b9-f2a7-4901-a7d9-5f4e3805a44e	insert	\N	2026-06-15 16:52:39.014428+00	\N	{"id": "acd6c8b9-f2a7-4901-a7d9-5f4e3805a44e", "nom": "Livreur 3", "role": "livreur", "email": "livreur3@dimed.dz", "is_active": "True", "created_at": "2026-06-15 16:52:39.014428+00:00", "updated_at": "2026-06-15 16:52:39.014428+00:00", "password_hash": "***", "is_email_verified": "True"}
+0a3f0fc6-fe46-4ae0-a081-a5d74aa138cc	users	a93c5e03-80cd-462a-87dc-e0477d944ca8	insert	\N	2026-06-15 16:52:39.014428+00	\N	{"id": "a93c5e03-80cd-462a-87dc-e0477d944ca8", "nom": "Livreur 4", "role": "livreur", "email": "livreur4@dimed.dz", "is_active": "True", "created_at": "2026-06-15 16:52:39.014428+00:00", "updated_at": "2026-06-15 16:52:39.014428+00:00", "password_hash": "***", "is_email_verified": "True"}
+1d9c666c-5faf-4b90-bc80-9beef9c4190a	users	04a7282f-79fb-4fe7-9523-990906e768ce	insert	\N	2026-06-15 16:52:39.014428+00	\N	{"id": "04a7282f-79fb-4fe7-9523-990906e768ce", "nom": "Livreur 5", "role": "livreur", "email": "livreur5@dimed.dz", "is_active": "True", "created_at": "2026-06-15 16:52:39.014428+00:00", "updated_at": "2026-06-15 16:52:39.014428+00:00", "password_hash": "***", "is_email_verified": "True"}
+0474ef2a-a30c-4da8-a002-3abe42ffc6b3	users	ed617636-c060-40c0-81a4-ef2a31ca4f74	insert	\N	2026-06-15 16:52:39.014428+00	\N	{"id": "ed617636-c060-40c0-81a4-ef2a31ca4f74", "nom": "Livreur 6", "role": "livreur", "email": "livreur6@dimed.dz", "is_active": "True", "created_at": "2026-06-15 16:52:39.014428+00:00", "updated_at": "2026-06-15 16:52:39.014428+00:00", "password_hash": "***", "is_email_verified": "True"}
+f835711e-a365-4041-b3c0-4cbb8e86a420	users	4cc324b0-8cd9-4d3f-b58f-766c28b1cfdf	insert	\N	2026-06-15 16:52:39.014428+00	\N	{"id": "4cc324b0-8cd9-4d3f-b58f-766c28b1cfdf", "nom": "Livreur 7", "role": "livreur", "email": "livreur7@dimed.dz", "is_active": "True", "created_at": "2026-06-15 16:52:39.014428+00:00", "updated_at": "2026-06-15 16:52:39.014428+00:00", "password_hash": "***", "is_email_verified": "True"}
+86500038-402b-4bee-8530-74ce2a2def19	users	c2f4b76f-21f4-4c4e-9c0f-a0a3f9b8d981	insert	\N	2026-06-15 16:52:39.014428+00	\N	{"id": "c2f4b76f-21f4-4c4e-9c0f-a0a3f9b8d981", "nom": "Livreur 8", "role": "livreur", "email": "livreur8@dimed.dz", "is_active": "True", "created_at": "2026-06-15 16:52:39.014428+00:00", "updated_at": "2026-06-15 16:52:39.014428+00:00", "password_hash": "***", "is_email_verified": "True"}
+3ae5506c-fcad-4b31-ad00-f23dc46523b4	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:28.275024+00	\N	{"id": "ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a", "statut": "creee", "created_at": "2026-06-15 16:53:28.275024+00:00", "updated_at": "2026-06-15 16:53:28.275024+00:00", "reference_id": "C00000063", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+43427e91-9194-4ce4-ac74-3f2bf95453bf	lignes_commande	78e566d8-5a6a-40f6-82d0-9e10858202b8	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:28.275024+00	\N	{"id": "78e566d8-5a6a-40f6-82d0-9e10858202b8", "verifie": "False", "created_at": "2026-06-15 16:53:28.275024+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:28.275024+00:00", "commande_id": "ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+506d0fe8-1eee-46a3-8387-f99dba4c9a03	lignes_commande	9e54c94b-2cff-469b-97e1-8deb561cdbb6	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:28.275024+00	\N	{"id": "9e54c94b-2cff-469b-97e1-8deb561cdbb6", "verifie": "False", "created_at": "2026-06-15 16:53:28.275024+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:28.275024+00:00", "commande_id": "ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}
+326329b2-04b9-43ca-af60-0fa0a8a3521f	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:28.367368+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:53:28.381385+00:00"}
+82140fe6-8559-428e-83f7-637a24ca4e2a	factures	62097201-b302-4f98-a35f-2046c88d4d1c	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:28.367368+00	\N	{"id": "62097201-b302-4f98-a35f-2046c88d4d1c", "created_at": "2026-06-15 16:53:28.367368+00:00", "montant_ht": "852.58", "updated_at": "2026-06-15 16:53:28.367368+00:00", "commande_id": "ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a", "montant_ttc": "852.58", "reference_id": "F0000000035", "date_emission": "2026-06-15 16:53:28.424281+00:00"}
+d88ea0c9-693e-4a23-867b-e46c553273b4	creances	83af5001-8f3b-4114-ae6e-d8c3253764be	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:28.367368+00	\N	{"id": "83af5001-8f3b-4114-ae6e-d8c3253764be", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:53:28.367368+00:00", "facture_id": "62097201-b302-4f98-a35f-2046c88d4d1c", "updated_at": "2026-06-15 16:53:28.367368+00:00", "montant_paye": "0", "montant_total": "852.58", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+1f843ad3-cae2-4e6a-b29c-794e8c145af9	bons_livraison	ddb2231a-d0b4-4a8f-97d3-d5666ef8a459	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:28.367368+00	\N	{"id": "ddb2231a-d0b4-4a8f-97d3-d5666ef8a459", "code_barre": "BL00000035", "created_at": "2026-06-15 16:53:28.367368+00:00", "updated_at": "2026-06-15 16:53:28.367368+00:00", "commande_id": "ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a", "date_emission": "2026-06-15 16:53:28.424281+00:00"}
+8ff0c180-6ef9-4377-97ed-7c1dc93d4fff	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:28.367368+00	{"stock_quantity": "62"}	{"stock_quantity": "60"}
+6e891fd6-fdee-45b1-97b0-c44be7743a0f	medicaments	592e33a9-acd2-410c-81f2-6cb3f8f17298	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:28.367368+00	{"stock_quantity": "10"}	{"stock_quantity": "9"}
+7169ee53-614c-42c3-ad40-e90e163da3b2	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:53:28.989448+00	{"preparateur_id": "None"}	{"preparateur_id": "3fce8dc2-16e0-4ce6-b41c-c0657216eb62"}
+3104ee55-1393-4043-9e02-c1dfaa49e0a6	caddies_pool	802cd6c5-26bf-4d33-8599-a741f84c0a2c	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:53:28.989448+00	{"is_available": "True", "current_commande_id": "None"}	{"is_available": "False", "current_commande_id": "ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a"}
+e746e90e-dae6-488d-b080-a4117518f280	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:53:28.989448+00	{"statut": "acceptee"}	{"statut": "en_preparation"}
+14b830b1-8cca-48a7-affa-7c8680aa339e	lignes_commande	78e566d8-5a6a-40f6-82d0-9e10858202b8	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:53:29.105524+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "2"}
+662c97cb-7908-40b6-be9c-60875bfe3041	lignes_commande	9e54c94b-2cff-469b-97e1-8deb561cdbb6	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:53:29.140303+00	{"verifie": "False", "qte_prelevee": "None"}	{"verifie": "True", "qte_prelevee": "1"}
+ac4595ef-83f7-40c3-824d-527c427654f6	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:53:29.170657+00	{"visa_preparateur": "None"}	{"visa_preparateur": "Preparateur"}
+ae29bb35-3d29-4108-9122-7cb3d2b210c1	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	update	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	2026-06-15 16:53:29.170657+00	{"statut": "en_preparation"}	{"statut": "en_verification"}
+059d22ef-12d9-47f2-ad1f-cb0e16b3db4a	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:53:29.67046+00	{"camion_id": "None"}	{"camion_id": "0450c96e-c43b-47f9-bdd3-08e5a62b1ae7"}
+db03e86f-4182-471a-9ad3-5b047fdc0a52	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:53:29.67046+00	{"feuille_route_id": "None"}	{"feuille_route_id": "5afebd2a-5d57-469b-8dc1-1aaa3a437189"}
+7836434e-e800-4973-b136-82a0045fe85e	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:53:29.7234+00	{"statut": "en_verification"}	{"statut": "prete"}
+4e21505d-5f09-4da4-907f-91f2140b2716	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	update	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:53:29.7234+00	{"nb_colis": "None", "visa_controleur": "None"}	{"nb_colis": "3", "visa_controleur": "Controleur"}
+452ba3d1-cbb3-490b-b393-1c87503fe3a4	colis	a7abc6ba-6a76-44b3-a913-a0f834112305	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:53:29.7234+00	\N	{"id": "a7abc6ba-6a76-44b3-a913-a0f834112305", "numero": "CLS00000019", "statut": "etiquete", "created_at": "2026-06-15 16:53:29.723400+00:00", "updated_at": "2026-06-15 16:53:29.723400+00:00", "commande_id": "ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a", "index_colis": "1"}
+4d84d06c-862f-463a-b437-fd9366ecb490	colis	f5d79986-28a7-407b-aed0-1a1748e7ce83	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:53:29.7234+00	\N	{"id": "f5d79986-28a7-407b-aed0-1a1748e7ce83", "numero": "CLS00000020", "statut": "etiquete", "created_at": "2026-06-15 16:53:29.723400+00:00", "updated_at": "2026-06-15 16:53:29.723400+00:00", "commande_id": "ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a", "index_colis": "2"}
+a420c4f3-4e67-4283-b48f-1a8f2afcabe9	colis	6ccd2d70-222e-429b-ae44-12fdd922daaf	insert	aec28fb7-8dfb-4781-b2b0-932d1a9e891d	2026-06-15 16:53:29.7234+00	\N	{"id": "6ccd2d70-222e-429b-ae44-12fdd922daaf", "numero": "CLS00000021", "statut": "etiquete", "created_at": "2026-06-15 16:53:29.723400+00:00", "updated_at": "2026-06-15 16:53:29.723400+00:00", "commande_id": "ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a", "index_colis": "3"}
+68285a21-021e-44a7-a587-1b72e17a14a0	scans_colis	0dde3709-331d-4469-89e2-46f952ed1dd9	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:53:30.394262+00	\N	{"id": "0dde3709-331d-4469-89e2-46f952ed1dd9", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "a7abc6ba-6a76-44b3-a913-a0f834112305", "type_scan": "depot_pad", "created_at": "2026-06-15 16:53:30.394262+00:00", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb", "updated_at": "2026-06-15 16:53:30.394262+00:00"}
+ba138a6e-15ce-4c5c-adb7-8f19397e2c5e	colis	a7abc6ba-6a76-44b3-a913-a0f834112305	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:53:30.394262+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb"}
+e07b2e58-05d1-404e-8352-6f7cd65d4cd9	scans_colis	653477f1-ec95-4d45-94a0-0676d1a1f8a5	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:53:30.492521+00	\N	{"id": "653477f1-ec95-4d45-94a0-0676d1a1f8a5", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "f5d79986-28a7-407b-aed0-1a1748e7ce83", "type_scan": "depot_pad", "created_at": "2026-06-15 16:53:30.492521+00:00", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb", "updated_at": "2026-06-15 16:53:30.492521+00:00"}
+62e004d9-c41b-4db1-8522-1ca318e58a15	colis	f5d79986-28a7-407b-aed0-1a1748e7ce83	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:53:30.492521+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb"}
+d25d66f1-4088-48a4-8316-7e5efc9126ab	scans_colis	ee8ba5a0-ba29-4bd2-84c1-6e63e3daa158	insert	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:53:30.529065+00	\N	{"id": "ee8ba5a0-ba29-4bd2-84c1-6e63e3daa158", "user_id": "3fa3d47d-99e0-4ac6-94c1-565354f320eb", "colis_id": "6ccd2d70-222e-429b-ae44-12fdd922daaf", "type_scan": "depot_pad", "created_at": "2026-06-15 16:53:30.529065+00:00", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb", "updated_at": "2026-06-15 16:53:30.529065+00:00"}
+aa52cecf-5e23-4c80-a0d4-9606fc3b52bf	colis	6ccd2d70-222e-429b-ae44-12fdd922daaf	update	3fa3d47d-99e0-4ac6-94c1-565354f320eb	2026-06-15 16:53:30.529065+00	{"statut": "etiquete", "pad_tir_id": "None"}	{"statut": "sur_pad", "pad_tir_id": "391020b3-c3f0-43b6-814f-f1165e33b8fb"}
+f69491f5-6f33-4318-aff6-71b2d77a9895	scans_colis	d2cc8636-6dd5-4005-a039-fcf7ebd2cd6b	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.073454+00	\N	{"id": "d2cc8636-6dd5-4005-a039-fcf7ebd2cd6b", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "a7abc6ba-6a76-44b3-a913-a0f834112305", "type_scan": "chargement", "created_at": "2026-06-15 16:53:31.073454+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:53:31.073454+00:00"}
+cda294f9-3e07-400b-a5db-bc5ed7349ba7	colis	a7abc6ba-6a76-44b3-a913-a0f834112305	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.073454+00	{"statut": "sur_pad"}	{"statut": "charge"}
+56e2b605-42db-4bd3-8cba-8ded7a665e06	scans_colis	7c140737-e7ce-4b64-bebf-c92c7073c3b6	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.155409+00	\N	{"id": "7c140737-e7ce-4b64-bebf-c92c7073c3b6", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "f5d79986-28a7-407b-aed0-1a1748e7ce83", "type_scan": "chargement", "created_at": "2026-06-15 16:53:31.155409+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:53:31.155409+00:00"}
+e6a9fb68-f7a4-4197-a5c0-bb946574d6ae	colis	f5d79986-28a7-407b-aed0-1a1748e7ce83	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.155409+00	{"statut": "sur_pad"}	{"statut": "charge"}
+eb6c0d6e-2348-4ed5-af56-2c3775a28120	scans_colis	e8645937-7974-40db-9cf7-29a184a540cb	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.210023+00	\N	{"id": "e8645937-7974-40db-9cf7-29a184a540cb", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "6ccd2d70-222e-429b-ae44-12fdd922daaf", "type_scan": "chargement", "created_at": "2026-06-15 16:53:31.210023+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:53:31.210023+00:00"}
+2c366abc-6b21-4e9e-960e-79315328f063	colis	6ccd2d70-222e-429b-ae44-12fdd922daaf	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.210023+00	{"statut": "sur_pad"}	{"statut": "charge"}
+53ad3836-bcf1-4be8-8ff0-05ec902eb6d4	commandes	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.35922+00	{"statut": "prete"}	{"statut": "en_route"}
+e8d8900c-2d97-4df7-83a8-15a846bb93ae	scans_colis	d0382182-bf97-4e03-a0f7-0ce2bd1478a0	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.402926+00	\N	{"id": "d0382182-bf97-4e03-a0f7-0ce2bd1478a0", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "a7abc6ba-6a76-44b3-a913-a0f834112305", "type_scan": "livraison", "created_at": "2026-06-15 16:53:31.402926+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:53:31.402926+00:00"}
+ad416235-da24-4f38-bcbc-63bc2a681037	colis	a7abc6ba-6a76-44b3-a913-a0f834112305	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.402926+00	{"statut": "charge"}	{"statut": "livre"}
+9896e896-2e2d-4467-bb34-37a28553cbb4	scans_colis	95880cd6-a3da-4f49-b8a6-18a4c9c9fd17	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.449946+00	\N	{"id": "95880cd6-a3da-4f49-b8a6-18a4c9c9fd17", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "f5d79986-28a7-407b-aed0-1a1748e7ce83", "type_scan": "livraison", "created_at": "2026-06-15 16:53:31.449946+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:53:31.449946+00:00"}
+07b7daad-df72-47ad-82cb-5d9f53005402	colis	f5d79986-28a7-407b-aed0-1a1748e7ce83	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.449946+00	{"statut": "charge"}	{"statut": "livre"}
+2a3db1d3-b707-4857-903e-a2390199e538	scans_colis	91546ad0-5bd9-47e3-99f4-91c6ad878eec	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.491684+00	\N	{"id": "91546ad0-5bd9-47e3-99f4-91c6ad878eec", "user_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "colis_id": "6ccd2d70-222e-429b-ae44-12fdd922daaf", "type_scan": "livraison", "created_at": "2026-06-15 16:53:31.491684+00:00", "pad_tir_id": "None", "updated_at": "2026-06-15 16:53:31.491684+00:00"}
+0e320da0-32bb-48b4-b4a6-eff10fbf7be7	colis	6ccd2d70-222e-429b-ae44-12fdd922daaf	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:31.491684+00	{"statut": "charge"}	{"statut": "livre"}
+bab0bf3c-106b-4cdb-b3af-66f76252b3a2	commandes	453dcf46-2d66-4bd3-b62d-7fb36a3effc4	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:37.187753+00	\N	{"id": "453dcf46-2d66-4bd3-b62d-7fb36a3effc4", "statut": "creee", "created_at": "2026-06-15 16:53:37.187753+00:00", "updated_at": "2026-06-15 16:53:37.187753+00:00", "reference_id": "C00000064", "montant_total": "397.00", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+68b9d646-8d16-4829-a262-6a65785db45a	lignes_commande	ca9ba7f0-166a-4f58-a63d-de08076cee9b	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:37.187753+00	\N	{"id": "ca9ba7f0-166a-4f58-a63d-de08076cee9b", "verifie": "False", "created_at": "2026-06-15 16:53:37.187753+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:37.187753+00:00", "commande_id": "453dcf46-2d66-4bd3-b62d-7fb36a3effc4", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+ac8d7b78-6ddc-4e31-9a1b-8684a6a74ec0	commandes	2fc0b24c-d935-4eac-9157-8563b3a8f368	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:38.572381+00	\N	{"id": "2fc0b24c-d935-4eac-9157-8563b3a8f368", "statut": "creee", "created_at": "2026-06-15 16:53:38.572381+00:00", "updated_at": "2026-06-15 16:53:38.572381+00:00", "reference_id": "C00000065", "montant_total": "397.00", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+bcfd7206-da92-4fa5-9fe2-35f94bd1f464	lignes_commande	02120740-d579-4d16-b8ff-c08751aaf4c6	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:38.572381+00	\N	{"id": "02120740-d579-4d16-b8ff-c08751aaf4c6", "verifie": "False", "created_at": "2026-06-15 16:53:38.572381+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:38.572381+00:00", "commande_id": "2fc0b24c-d935-4eac-9157-8563b3a8f368", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "2", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+a30cd74e-42f9-4b83-ac93-b7cc84ade899	lignes_commande	02120740-d579-4d16-b8ff-c08751aaf4c6	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:38.610511+00	{"qte_demandee": "2"}	{"qte_demandee": "5"}
+96023c29-a428-47cc-a1c8-2ecbda16b349	commandes	2fc0b24c-d935-4eac-9157-8563b3a8f368	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:38.610511+00	{"montant_total": "397.00"}	{"montant_total": "992.50"}
+48c29d6b-1882-4567-9ef8-3f226d76b5c6	lignes_commande	c9a24c2f-fde5-4fe8-810e-b59e4591bcd5	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:38.652096+00	\N	{"id": "c9a24c2f-fde5-4fe8-810e-b59e4591bcd5", "verifie": "False", "created_at": "2026-06-15 16:53:38.652096+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:38.652096+00:00", "commande_id": "2fc0b24c-d935-4eac-9157-8563b3a8f368", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}
+f1e9df31-d148-4c63-826c-f789c5b605b4	commandes	2fc0b24c-d935-4eac-9157-8563b3a8f368	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:38.652096+00	{"montant_total": "992.50"}	{"lignes": "<app.models.commande.LigneCommande object at 0x000001E282D04410>", "montant_total": "1448.08"}
+574c6fbb-ed42-4164-ab46-98bae6815b0e	commandes	2fc0b24c-d935-4eac-9157-8563b3a8f368	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:38.69785+00	{"lignes": "<app.models.commande.LigneCommande object at 0x000001E282D04E60>", "montant_total": "1448.08"}	{"montant_total": "992.50"}
+22a9f26c-c84f-4164-aa11-6508dba2951f	lignes_commande	c9a24c2f-fde5-4fe8-810e-b59e4591bcd5	delete	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:38.69785+00	{"id": "c9a24c2f-fde5-4fe8-810e-b59e4591bcd5", "exp": "None", "fab": "None", "ppa": "None", "n_lot": "None", "verifie": "False", "remise_pct": "0.00", "commande_id": "2fc0b24c-d935-4eac-9157-8563b3a8f368", "designation": "AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH", "qte_demandee": "1", "qte_prelevee": "None", "medicament_id": "592e33a9-acd2-410c-81f2-6cb3f8f17298", "prix_unitaire": "455.58"}	\N
+cb1393a9-4dc8-4c54-bb15-6f60d2222ae2	commandes	d9a2e9ba-5d30-42c9-a776-f05e2ba3c181	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:40.012486+00	\N	{"id": "d9a2e9ba-5d30-42c9-a776-f05e2ba3c181", "statut": "creee", "created_at": "2026-06-15 16:53:40.012486+00:00", "updated_at": "2026-06-15 16:53:40.012486+00:00", "reference_id": "C00000066", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+584fc78c-6f2a-4764-9aa0-2a9f6c1014dc	lignes_commande	a2733797-c0ab-4409-8ca0-8d439f636017	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:40.012486+00	\N	{"id": "a2733797-c0ab-4409-8ca0-8d439f636017", "verifie": "False", "created_at": "2026-06-15 16:53:40.012486+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:40.012486+00:00", "commande_id": "d9a2e9ba-5d30-42c9-a776-f05e2ba3c181", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+42914347-385c-4fe1-b413-c44bf74b2ede	commandes	d9a2e9ba-5d30-42c9-a776-f05e2ba3c181	update	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:40.060369+00	{"statut": "creee"}	{"statut": "annulee"}
+acfd2435-0f44-4ac2-97e4-490f99eec736	commandes	1c82273c-17f9-46c1-984b-ba0d11ce9022	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:41.444322+00	\N	{"id": "1c82273c-17f9-46c1-984b-ba0d11ce9022", "statut": "creee", "created_at": "2026-06-15 16:53:41.444322+00:00", "updated_at": "2026-06-15 16:53:41.444322+00:00", "reference_id": "C00000067", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+ade758f4-4d8e-424d-8e27-30e7450c938f	lignes_commande	1824862c-ee51-4488-b937-e59607e53d6a	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:41.444322+00	\N	{"id": "1824862c-ee51-4488-b937-e59607e53d6a", "verifie": "False", "created_at": "2026-06-15 16:53:41.444322+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:41.444322+00:00", "commande_id": "1c82273c-17f9-46c1-984b-ba0d11ce9022", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+6c24a618-bd0c-4367-9e42-5835d650452e	commandes	1c82273c-17f9-46c1-984b-ba0d11ce9022	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:41.885247+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:53:41.893898+00:00"}
+309ca26e-9385-4194-9f86-e340095123e0	factures	592ba8bd-ebfa-4cf4-9ecb-eaf0c4f95369	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:41.885247+00	\N	{"id": "592ba8bd-ebfa-4cf4-9ecb-eaf0c4f95369", "created_at": "2026-06-15 16:53:41.885247+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 16:53:41.885247+00:00", "commande_id": "1c82273c-17f9-46c1-984b-ba0d11ce9022", "montant_ttc": "198.50", "reference_id": "F0000000036", "date_emission": "2026-06-15 16:53:41.917583+00:00"}
+be773303-733c-4649-8600-c612abdcd9c7	creances	7b0b5387-9832-4f75-b50b-fed1b6db5aa9	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:41.885247+00	\N	{"id": "7b0b5387-9832-4f75-b50b-fed1b6db5aa9", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:53:41.885247+00:00", "facture_id": "592ba8bd-ebfa-4cf4-9ecb-eaf0c4f95369", "updated_at": "2026-06-15 16:53:41.885247+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+a6f33136-4806-4354-bcf7-5489f05d560a	bons_livraison	aa31c5d6-6d13-4cc3-839d-da814a703d05	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:41.885247+00	\N	{"id": "aa31c5d6-6d13-4cc3-839d-da814a703d05", "code_barre": "BL00000036", "created_at": "2026-06-15 16:53:41.885247+00:00", "updated_at": "2026-06-15 16:53:41.885247+00:00", "commande_id": "1c82273c-17f9-46c1-984b-ba0d11ce9022", "date_emission": "2026-06-15 16:53:41.917583+00:00"}
+48dcb6f4-1cb2-4089-b253-a72fa6917d35	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:41.885247+00	{"stock_quantity": "60"}	{"stock_quantity": "59"}
+4aca43d6-1b55-4dba-bc92-f8afe918225a	commandes	e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:43.832536+00	\N	{"id": "e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5", "statut": "creee", "created_at": "2026-06-15 16:53:43.832536+00:00", "updated_at": "2026-06-15 16:53:43.832536+00:00", "reference_id": "C00000068", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+5cbd85fc-4a53-4cae-bf74-0a3b827abaa9	lignes_commande	4d93b7d6-56e3-410f-b25c-d22a399cdc38	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:43.832536+00	\N	{"id": "4d93b7d6-56e3-410f-b25c-d22a399cdc38", "verifie": "False", "created_at": "2026-06-15 16:53:43.832536+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:43.832536+00:00", "commande_id": "e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+378c1de3-acd3-4786-9aba-218e7f1a2c76	commandes	e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:43.880048+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:53:43.890221+00:00"}
+fbc5196b-8dd8-4055-88d4-51709bca5788	factures	7e944020-3254-4f86-b8f9-3b34636f65b7	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:43.880048+00	\N	{"id": "7e944020-3254-4f86-b8f9-3b34636f65b7", "created_at": "2026-06-15 16:53:43.880048+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 16:53:43.880048+00:00", "commande_id": "e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5", "montant_ttc": "198.50", "reference_id": "F0000000037", "date_emission": "2026-06-15 16:53:43.915662+00:00"}
+1697cfcf-955c-4326-ac90-795c63f8bac2	creances	fff05989-44b3-458a-a0e3-8dc0504f0fe4	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:43.880048+00	\N	{"id": "fff05989-44b3-458a-a0e3-8dc0504f0fe4", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:53:43.880048+00:00", "facture_id": "7e944020-3254-4f86-b8f9-3b34636f65b7", "updated_at": "2026-06-15 16:53:43.880048+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+6dccb224-eb32-44ef-9c41-399d2880f426	bons_livraison	6966e1ff-f62c-4de7-a93a-ae071793d656	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:43.880048+00	\N	{"id": "6966e1ff-f62c-4de7-a93a-ae071793d656", "code_barre": "BL00000037", "created_at": "2026-06-15 16:53:43.880048+00:00", "updated_at": "2026-06-15 16:53:43.880048+00:00", "commande_id": "e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5", "date_emission": "2026-06-15 16:53:43.915662+00:00"}
+db46dead-e3ce-4752-9271-fd0e3ff4110b	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:43.880048+00	{"stock_quantity": "59"}	{"stock_quantity": "58"}
+aca27702-174c-4e1a-aedc-b1a4ed39c506	commandes	5b7c805d-1652-4f86-997e-88a6cedb2195	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:45.365555+00	\N	{"id": "5b7c805d-1652-4f86-997e-88a6cedb2195", "statut": "creee", "created_at": "2026-06-15 16:53:45.365555+00:00", "updated_at": "2026-06-15 16:53:45.365555+00:00", "reference_id": "C00000069", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+186221ad-2e38-441e-84cf-8caa25228923	lignes_commande	7de443ae-f517-4429-8f0f-64b78c44dcee	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:45.365555+00	\N	{"id": "7de443ae-f517-4429-8f0f-64b78c44dcee", "verifie": "False", "created_at": "2026-06-15 16:53:45.365555+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:45.365555+00:00", "commande_id": "5b7c805d-1652-4f86-997e-88a6cedb2195", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+55311eea-e2dd-4917-ba47-eafe3146299a	commandes	5b7c805d-1652-4f86-997e-88a6cedb2195	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:45.403524+00	{"operatrice_comment": "None"}	{"operatrice_comment": "Quantité erronée, merci de corriger la ligne 1"}
+66f6b186-fb2f-4c60-aab4-b1e6322e29d9	commandes	5b7c805d-1652-4f86-997e-88a6cedb2195	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:45.454935+00	{"statut": "creee", "operatrice_id": "None", "date_validation": "None"}	{"statut": "acceptee", "operatrice_id": "5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb", "date_validation": "2026-06-15 16:53:45.464283+00:00"}
+910bb549-9f06-4a64-a670-8fa416c54fd5	factures	e5c33d2f-432b-40f7-b114-67acaa6062fe	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:45.454935+00	\N	{"id": "e5c33d2f-432b-40f7-b114-67acaa6062fe", "created_at": "2026-06-15 16:53:45.454935+00:00", "montant_ht": "198.50", "updated_at": "2026-06-15 16:53:45.454935+00:00", "commande_id": "5b7c805d-1652-4f86-997e-88a6cedb2195", "montant_ttc": "198.50", "reference_id": "F0000000038", "date_emission": "2026-06-15 16:53:45.483194+00:00"}
+25bfe879-b4e7-4afd-8bc4-0717378c9da8	creances	19e840a9-94e1-4dd1-b54b-e0aaf6fa811a	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:45.454935+00	\N	{"id": "19e840a9-94e1-4dd1-b54b-e0aaf6fa811a", "statut": "en_attente", "echeance": "2026-07-15", "created_at": "2026-06-15 16:53:45.454935+00:00", "facture_id": "e5c33d2f-432b-40f7-b114-67acaa6062fe", "updated_at": "2026-06-15 16:53:45.454935+00:00", "montant_paye": "0", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+d6424eea-999d-467c-a727-4873156597af	bons_livraison	b018d880-19c7-4c76-a240-de75d09a1fb6	insert	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:45.454935+00	\N	{"id": "b018d880-19c7-4c76-a240-de75d09a1fb6", "code_barre": "BL00000038", "created_at": "2026-06-15 16:53:45.454935+00:00", "updated_at": "2026-06-15 16:53:45.454935+00:00", "commande_id": "5b7c805d-1652-4f86-997e-88a6cedb2195", "date_emission": "2026-06-15 16:53:45.483194+00:00"}
+41a53264-fed0-4736-bb84-05a1f13f60e5	medicaments	02787863-90cc-4020-93a4-0fc4bab203c7	update	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	2026-06-15 16:53:45.454935+00	{"stock_quantity": "58"}	{"stock_quantity": "57"}
+a32c5f52-06a7-42e9-84eb-cbfa3d763ca6	commandes	84f1e647-a353-47f8-9bdf-ee221e62ca60	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:46.915217+00	\N	{"id": "84f1e647-a353-47f8-9bdf-ee221e62ca60", "statut": "creee", "created_at": "2026-06-15 16:53:46.915217+00:00", "updated_at": "2026-06-15 16:53:46.915217+00:00", "reference_id": "C00000070", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+222527fb-ce1e-491d-ae50-db73606051cc	lignes_commande	1231efcc-bf96-44be-9438-30b648e1de4c	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:46.915217+00	\N	{"id": "1231efcc-bf96-44be-9438-30b648e1de4c", "verifie": "False", "created_at": "2026-06-15 16:53:46.915217+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:46.915217+00:00", "commande_id": "84f1e647-a353-47f8-9bdf-ee221e62ca60", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
+b91c7704-729d-45c5-9c8e-daf0953d0f6b	commandes	d24acb48-0718-4829-a4ed-fe14a7802da7	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:49.849639+00	\N	{"id": "d24acb48-0718-4829-a4ed-fe14a7802da7", "statut": "creee", "created_at": "2026-06-15 16:53:49.849639+00:00", "updated_at": "2026-06-15 16:53:49.849639+00:00", "reference_id": "C00000071", "montant_total": "198.50", "pharmacien_id": "80b3ae99-edfc-4220-a471-03c5366fb10d"}
+0ac925f0-1d81-4f07-9ed0-111d5692779f	lignes_commande	8fb129ae-cc33-46ed-abba-8be5fe4c1b13	insert	80b3ae99-edfc-4220-a471-03c5366fb10d	2026-06-15 16:53:49.849639+00	\N	{"id": "8fb129ae-cc33-46ed-abba-8be5fe4c1b13", "verifie": "False", "created_at": "2026-06-15 16:53:49.849639+00:00", "remise_pct": "0.00", "updated_at": "2026-06-15 16:53:49.849639+00:00", "commande_id": "d24acb48-0718-4829-a4ed-fe14a7802da7", "designation": "ALLERTINE. 10MG B/20 COMP. SEC", "qte_demandee": "1", "medicament_id": "02787863-90cc-4020-93a4-0fc4bab203c7", "prix_unitaire": "198.50"}
 \.
 
 
@@ -963,6 +1623,25 @@ e9c2857c-d295-43aa-b05f-cd39a3d2a006	870c4e4e-0ac5-47e6-9ad5-ad018343b8cd	BL0000
 52495748-0209-41e3-a0d4-6e440e880754	6e7ffbab-0205-4987-b782-0f9dfae7d304	BL00000017	2026-04-13 20:14:14.444203+00	2026-04-13 20:14:14.410049+00	2026-04-13 20:14:14.410049+00	\N
 bfc31af4-042d-4a87-aea7-91452dbb7784	18a1fd87-3e0b-477f-a337-39709652df94	BL00000018	2026-04-13 20:21:23.188874+00	2026-04-13 20:21:23.16632+00	2026-04-13 20:21:23.16632+00	\N
 4d42e6ef-924d-4552-8214-b113d301d7fa	81b6516c-629b-4d80-82d5-24a7801ae726	BL00000019	2026-04-13 20:21:37.469809+00	2026-04-13 20:21:37.447254+00	2026-04-13 20:21:37.447254+00	\N
+5920fdbd-2226-4415-9299-115cac7a731c	7646e2c0-c917-471f-98a8-29c2fc69479b	BL00000020	2026-06-15 15:50:25.4822+00	2026-06-15 15:50:25.440264+00	2026-06-15 15:50:25.440264+00	\N
+796dbf15-725f-44b6-a688-921c61992f4d	3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e	BL00000021	2026-06-15 15:50:34.356499+00	2026-06-15 15:50:34.331446+00	2026-06-15 15:50:34.331446+00	\N
+1a2643b5-3f16-44c1-a0f5-dca71cdb0fb3	bdb4d02b-fdb8-481a-949a-1793843e552b	BL00000022	2026-06-15 15:50:36.360829+00	2026-06-15 15:50:36.337415+00	2026-06-15 15:50:36.337415+00	\N
+e0a57ccb-ea71-414e-bca3-421f229068ac	712e33d3-a45d-4ec6-82e1-488c453c04af	BL00000023	2026-06-15 15:50:37.869143+00	2026-06-15 15:50:37.850071+00	2026-06-15 15:50:37.850071+00	\N
+ac7e0e60-55c3-4bb2-b936-99a47617d21f	634eadc7-857c-4ff9-8163-5b54a9eb0dda	BL00000024	2026-06-15 15:51:37.080196+00	2026-06-15 15:51:37.056864+00	2026-06-15 15:51:37.056864+00	\N
+2927e86d-d1a3-4f25-8c20-3c964935825b	b457ab88-16a4-423c-a37c-7c9373b01e00	BL00000025	2026-06-15 16:03:55.072684+00	2026-06-15 16:03:55.016795+00	2026-06-15 16:03:55.016795+00	\N
+53cdf81f-3a93-4c4d-9e1a-e766e05bdbef	53b0ca21-ecda-4875-8b88-45e6a4426f74	BL00000026	2026-06-15 16:04:07.405483+00	2026-06-15 16:04:07.367451+00	2026-06-15 16:04:07.367451+00	\N
+ab458bf0-c55f-41df-aa54-84b40c8cdc45	7e3dbefd-9e34-4af7-8137-bd435e68555e	BL00000027	2026-06-15 16:04:10.082811+00	2026-06-15 16:04:10.056726+00	2026-06-15 16:04:10.056726+00	\N
+686b33f9-bca7-4dd3-a611-d3d14693642d	afd7ad6c-776b-4c2c-9c6a-ce0134c65366	BL00000028	2026-06-15 16:04:12.37994+00	2026-06-15 16:04:12.349117+00	2026-06-15 16:04:12.349117+00	\N
+ab7b768b-8e0b-492a-9e15-0a97ed8854a2	a90de1fe-e8f3-4c96-8107-69eba971d1a8	BL00000029	2026-06-15 16:04:51.819051+00	2026-06-15 16:04:51.786482+00	2026-06-15 16:04:51.786482+00	\N
+85891160-aa45-408f-af07-ec6f79743fed	70932ee6-bdba-4e93-b487-e0e51c7452f9	BL00000030	2026-06-15 16:14:02.797822+00	2026-06-15 16:14:02.696749+00	2026-06-15 16:14:02.696749+00	\N
+af674db5-5919-443c-b929-7bb0fab7e6cf	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	BL00000031	2026-06-15 16:43:18.690721+00	2026-06-15 16:43:18.644412+00	2026-06-15 16:43:18.644412+00	\N
+563a9d1e-5c07-432f-9483-eefc34b5dbec	9d504663-a4f6-4855-bdec-407cfabc199a	BL00000032	2026-06-15 16:43:28.020842+00	2026-06-15 16:43:27.985656+00	2026-06-15 16:43:27.985656+00	\N
+669507e6-443d-44d4-a364-6011d0ed0d9b	54d4a168-cd3c-4ad7-8531-def1a75875e3	BL00000033	2026-06-15 16:43:29.866499+00	2026-06-15 16:43:29.840087+00	2026-06-15 16:43:29.840087+00	\N
+5ed5c26e-f9e5-4f2a-bc91-05a9d9427876	a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd	BL00000034	2026-06-15 16:43:31.29062+00	2026-06-15 16:43:31.265314+00	2026-06-15 16:43:31.265314+00	\N
+ddb2231a-d0b4-4a8f-97d3-d5666ef8a459	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	BL00000035	2026-06-15 16:53:28.424281+00	2026-06-15 16:53:28.367368+00	2026-06-15 16:53:28.367368+00	\N
+aa31c5d6-6d13-4cc3-839d-da814a703d05	1c82273c-17f9-46c1-984b-ba0d11ce9022	BL00000036	2026-06-15 16:53:41.917583+00	2026-06-15 16:53:41.885247+00	2026-06-15 16:53:41.885247+00	\N
+6966e1ff-f62c-4de7-a93a-ae071793d656	e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5	BL00000037	2026-06-15 16:53:43.915662+00	2026-06-15 16:53:43.880048+00	2026-06-15 16:53:43.880048+00	\N
+b018d880-19c7-4c76-a240-de75d09a1fb6	5b7c805d-1652-4f86-997e-88a6cedb2195	BL00000038	2026-06-15 16:53:45.483194+00	2026-06-15 16:53:45.454935+00	2026-06-15 16:53:45.454935+00	\N
 \.
 
 
@@ -987,8 +1666,8 @@ COPY public.caddies_pool (id, numero, is_available, current_commande_id, created
 04679469-bcb6-4b2d-a172-d5cbc61e1754	C08	t	\N	2026-04-13 14:14:49.646408+00	\N	\N	\N
 89405b14-49e1-4c21-ad02-78f4c9ec451e	C09	t	\N	2026-04-13 14:14:49.646408+00	\N	\N	\N
 3da494aa-631c-446c-b044-2382d7c9104a	C10	t	\N	2026-04-13 14:14:49.646408+00	\N	\N	\N
-802cd6c5-26bf-4d33-8599-a741f84c0a2c	C01	t	\N	2026-04-13 14:14:49.646408+00	\N	2026-04-13 20:16:59.495944+00	\N
 39c5bd49-2abb-4d81-905a-f28ad3bc3b4c	C03	t	\N	2026-04-13 14:14:49.646408+00	\N	2026-04-13 20:22:02.525036+00	\N
+802cd6c5-26bf-4d33-8599-a741f84c0a2c	C01	t	\N	2026-04-13 14:14:49.646408+00	\N	2026-06-15 16:53:29.170657+00	\N
 \.
 
 
@@ -1005,6 +1684,43 @@ COPY public.camions (id, nom, plaque, created_at, updated_at, created_by) FROM s
 c0836d0b-47bc-4304-a1e0-b954fe2e99da	Ligne 6 - Bab Ezzouar	00100-106-16	2026-04-01 13:48:20.74562+00	2026-04-01 13:48:20.74562+00	\N
 6b9d9b8f-05c2-494c-90f7-7b767d1fe335	Ligne 7 - Rouiba	00100-107-16	2026-04-01 13:48:20.74562+00	2026-04-01 13:48:20.74562+00	\N
 02bd12de-6e8e-4957-9491-97eb88c75942	Ligne 8 - Blida	00100-108-09	2026-04-01 13:48:20.74562+00	2026-04-01 13:48:20.74562+00	\N
+\.
+
+
+--
+-- Data for Name: colis; Type: TABLE DATA; Schema: public; Owner: dimed
+--
+
+COPY public.colis (id, numero, commande_id, index_colis, statut, pad_tir_id, created_at, updated_at, created_by) FROM stdin;
+a7abc6ba-6a76-44b3-a913-a0f834112305	CLS00000019	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	1	livre	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:53:29.7234+00	2026-06-15 16:53:31.402926+00	\N
+f5d79986-28a7-407b-aed0-1a1748e7ce83	CLS00000020	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	2	livre	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:53:29.7234+00	2026-06-15 16:53:31.449946+00	\N
+6ccd2d70-222e-429b-ae44-12fdd922daaf	CLS00000021	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	3	livre	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:53:29.7234+00	2026-06-15 16:53:31.491684+00	\N
+36b6616e-a0f9-4224-89b2-f744dcca9174	CLS00000001	7646e2c0-c917-471f-98a8-29c2fc69479b	1	livre	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 15:50:26.816689+00	2026-06-15 15:50:28.336848+00	\N
+e934bb2d-0bc6-4d1f-a884-7f8649193733	CLS00000002	7646e2c0-c917-471f-98a8-29c2fc69479b	2	livre	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 15:50:26.816689+00	2026-06-15 15:50:28.373533+00	\N
+3d1422e6-0ffc-4370-9678-4ee429565578	CLS00000003	7646e2c0-c917-471f-98a8-29c2fc69479b	3	livre	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 15:50:26.816689+00	2026-06-15 15:50:28.404734+00	\N
+9865055c-ae07-4449-9fa9-393ae8e05984	CLS00000007	b457ab88-16a4-423c-a37c-7c9373b01e00	1	livre	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:03:56.63148+00	2026-06-15 16:03:58.45238+00	\N
+321c323c-856f-4ffe-a108-6d3dffeffc4d	CLS00000008	b457ab88-16a4-423c-a37c-7c9373b01e00	2	livre	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:03:56.63148+00	2026-06-15 16:03:58.495277+00	\N
+1427f0c3-ba2d-4ef2-a865-79b32a844edf	CLS00000009	b457ab88-16a4-423c-a37c-7c9373b01e00	3	livre	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:03:56.63148+00	2026-06-15 16:03:58.5357+00	\N
+feb38818-c5b5-4275-8122-482af5cabff9	CLS00000004	634eadc7-857c-4ff9-8163-5b54a9eb0dda	1	etiquete	\N	2026-06-15 15:51:40.249629+00	2026-06-15 15:51:57.90683+00	\N
+77f65be3-db67-4a40-8aa7-eca7c8917770	CLS00000005	634eadc7-857c-4ff9-8163-5b54a9eb0dda	2	etiquete	\N	2026-06-15 15:51:40.249629+00	2026-06-15 16:03:31.551987+00	\N
+e8524629-231b-47a9-924c-90c318a566c3	CLS00000006	634eadc7-857c-4ff9-8163-5b54a9eb0dda	3	etiquete	\N	2026-06-15 15:51:40.249629+00	2026-06-15 16:03:31.551987+00	\N
+4566b695-b2c8-4009-b4a9-4fe8f9b2eb63	CLS00000010	a90de1fe-e8f3-4c96-8107-69eba971d1a8	1	etiquete	\N	2026-06-15 16:04:55.104675+00	2026-06-15 16:04:55.104675+00	\N
+72aef3f2-1486-4cd7-915d-423bde41ef8c	CLS00000011	a90de1fe-e8f3-4c96-8107-69eba971d1a8	2	etiquete	\N	2026-06-15 16:04:55.104675+00	2026-06-15 16:04:55.104675+00	\N
+2de3edd1-5302-4617-82c9-244ddb424b2e	CLS00000012	70932ee6-bdba-4e93-b487-e0e51c7452f9	1	sur_pad	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:20:36.975657+00	2026-06-15 16:26:50.871261+00	\N
+4661cc5f-1c47-4c92-9bb3-9c8b8c2fd8db	CLS00000013	70932ee6-bdba-4e93-b487-e0e51c7452f9	2	sur_pad	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:20:36.975657+00	2026-06-15 16:26:50.871261+00	\N
+867bbd1b-110a-470e-8f20-b02bb47529d1	CLS00000014	70932ee6-bdba-4e93-b487-e0e51c7452f9	3	sur_pad	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:20:36.975657+00	2026-06-15 16:26:50.871261+00	\N
+4a0a17aa-fd5a-4a1c-bca8-0788e764aed6	CLS00000015	70932ee6-bdba-4e93-b487-e0e51c7452f9	4	sur_pad	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:20:36.975657+00	2026-06-15 16:26:50.871261+00	\N
+d0dc8e6f-1b06-4d71-8dac-5d5abae4d120	CLS00000016	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	1	livre	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:43:19.876809+00	2026-06-15 16:43:21.308159+00	\N
+d6fd0be7-837c-43b0-9430-27781bf63503	CLS00000017	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	2	livre	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:43:19.876809+00	2026-06-15 16:43:21.353342+00	\N
+1e0ede6a-53e5-485f-8fca-ca781bdcbda6	CLS00000018	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	3	livre	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:43:19.876809+00	2026-06-15 16:43:21.388009+00	\N
+\.
+
+
+--
+-- Data for Name: colis_lignes; Type: TABLE DATA; Schema: public; Owner: dimed
+--
+
+COPY public.colis_lignes (id, colis_id, ligne_commande_id, quantite, created_at, updated_at, created_by) FROM stdin;
 \.
 
 
@@ -1038,6 +1754,72 @@ be9e9a4e-ca96-4d21-ba90-b920221f2efc	C00000027	80b3ae99-edfc-4220-a471-03c5366fb
 6e7ffbab-0205-4987-b782-0f9dfae7d304	C00000028	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	livree	852.58	\N	2026-04-13 20:14:14.419314+00	2026-04-13 20:11:54.635136+00	2026-04-13 20:24:24.873207+00	\N	1c2411aa-1f09-4c5d-8360-96180f6b4c54	\\x89504e470d0a1a0a0000000d4948445200000190000000c80806000000c615b7e20000178049444154785eeddd6fb0555303c7f195484a09d50da5a474bbddca4d7feead4412217fca6d18066330e3355e99f1c21be385578c196318c38c6946122915f91b1129657453ba9594ae4849fea4f43cbffdccdecfdaa773ef3d679f75ef397bafef9a31ccd3d9fbecf55967fa3d6baf7f5d8effb7180a020820800002450a7421408a14e3e30820800002810001c20f01010410402091000192888d8b104000010408107e03082080000289040890446c5c84000208204080f01b4000010410482440802462e32204104000010284df00020820804022010224111b1721800002081020fc0610400001041209102089d8b808010410408000e13780000208209048800049c4c64508208000020408bf0104104000814402044822362e42000104102040f80d20800002082412204012b17111020820800001c26f00010410402091000192888d8b104000010408107e03082080000289040890446c5c84000208204080f01b4000010410482440802462e32204104000010284df00020820804022010224111b1721800002081020fc0610400001041209102089d8b808010410408000e13780000208209048800049c4c64508208000020408bf0104104000814402a90c90fbefbfdff4ebd7cf5c7ef9e5c13f5dbb764d54792e4200010410482e90ba00d9b56b97a9afaf8f6adcad5bb72848142683070f4eaec1950820800002050ba42e4054b32fbef8c27cf0c107c13f5f7df555acb235353551a04c9932a560083e8800020820509c402a03c4aee28f3ffe1885c9871f7e680e1d3a14fd71efdebd63bd93aaaaaae274f8340208208040ab02a90f90dc9aad5ab5ca2848d43b696a6a8afdf1b871e38240b9ecb2cbccf8f1e3f9592080000208942090b900b12d76ecd811f54e1428fffcf34ff4c7fdfbf70f82241c88efd3a74f098c5c8a000208f82790e900b19bf3e8d1a3b130d9be7d7bacb51b1a1aa230a9adadf5ef97408d114000812205bc09905c97cd9b374781a2d75e76193468506ceca47bf7ee45b2f27104104020fb02de0688ddb4bffffe7bac77a281f9b074e9d2251626c3860dcbfeaf821a228000020508102079903435389c26ac29c376193e7c782c500a30e6230820804026050890769af5e79f7f0ec2249cd9b57ffffee88ad34e3b2d162603070ecce48f844a21800002f9040890227f176bd6ac897a271b376e8c5d3d7af4e8689ab006e5290820804096050890125a77f7eeddb1b1933ffef823badb99679e199b26acbdbb28082080409604081087ad19bee6d22baf2d5bb6c4eeac858be19a93baba3a87dfcaad10400081f20810201de4be6ddbb658efe4df7fff8dbe69c08001b1b1935ebd7a75d053705b041040a0e30408908eb38deefcf7df7fc7c2e4fbefbf8f7debd4a953a34019397264273c115f81000208942e4080946e58f41dbef9e69b285056af5e1dbb7ec89021b1dec929a79c52f4fdb900010410e80c0102a43394dbf88e83070fc6a609b7b4b4449f3ef9e493636172c1051794f969f97a041040e0ff02044885fd1ad6ad5b17f54ebefcf2cbd8d35557574733bba64d9b56614fcee32080806f02044805b7f84f3ffd141b3b516f252c3d7bf68cf54ece3df7dc0aae098f8600025914204052d4aa1a2f09b758d1388a5dc68e1d1b05cac4891353542b1e150104d22a4080a4b4e534932b0c13fd5b33bdc272f6d967c77a27679d75564a6bc963974be091471e09cecf79fcf1c7cbf5087c6f0a0408901434527b8fa835267698680d8a5d264d9a1405ca983163dabb1d7feea180f67c9b33678ed1216cf69aa5071f7cd03cf0c0031e8a50e542040890429452f619ad820f0345abe3ed72de79e7c57a273d7af44859ed785c1702c78f1f378f3efaa879f9e5978dbd054feebdb55d0f0581d60408908cff36f49783bdc5ca0f3ffc10ab7178acaffe3d62c4888c6bf85b3dbd8e7aecb1c7ccc2850bcdafbffe1aeb65d82a279d7492d19105cb972f37ddba75f3178c9a1724408014c4949d0f7dfdf5d751efe4b3cf3e8b55ecc20b2f8c6d00d9b56bd7ec54dcb39afcf9e79fe689279e300b162c303a82403d8ed6cae9a79f6eeebaeb2ef3f0c30f7ba644754b1520404a154cf1f5fa7fa2f6d889de838745ffef33dcfc51ff1e3c78708a6b9afd476f6a6a32cf3cf38c59bc78b1397af468ab3d0c9db0a9bdd766ce9c699e7cf2c9ecc350c30e1520403a94375d37d7e98b61a0e85446bbd4d4d444813265ca9474552c434fabb541afbdf69a59b26489d164091dc76c0f7ae7565581a11e8602e3a9a79eca900455a9040102a4125aa1029f41e7c2dbbd13fd451596debd7bc77a27555555155883743fd2b163c78c0e2c7bf6d9678d7624d8b76f9f3972e448bb95d218861699ce9831c33cfdf4d3ed7e9e0f20508a0001528a9e47d7ae5ab52a0a94cd9b37c76a3e6edcb828502eb9e4128f54dc545561fdca2baf9865cb9605d3680f1f3edc66af42dfaa9e858e54d60e049a00a1310c8d615110e84c0102a433b533f25ddbb76f8f6d00a9193e61e9dfbf7fac7772c6196764a4d6a557433d08bd267ce185178c5e116accc9b66bed1bb4a9a64eb81c356a94696c6c0cd66b5010a8040102a4125a21c5cfa0bf00ed69c20a17bb4c9e3c393a27beb6b636c5352deed1355d5a6b2c56ae5c6976eedc69342baaadb18ab057a1753983060d32d3a74f3777df7db7d1ba1d0a02952a4080546acba4f4b9f47a2b1c3bd16b2fbbe82f467b6657f7eedd535acbff3fb682e1934f3e312fbdf492d114694d99d52ca8f68ace79d11633dac36cdebc79e6da6baf6def12fe1c818a1320402aae49b2f3401a78b707e2f5ae3f2c7a876f87c9b061c32abee2ea49bcf8e28b419d76edda15f42ada5a5fa10a69505bbd0a4d83beeaaaabcc3df7dc13bc8ea22090050102240bad98923ae8bd7f18281a0bb08b563fdb8152ce2a29f8de7bef3d337ffe7cb369d32673e0c081827a155a3ba38d2cebeaeaccadb7de1acc84a2209065010224cbad5bc175d300b2dd3bd1a2c6b06876911d2603070eecb09a3437379be79e7bce7cfcf1c766cf9e3de6afbffe2aa857a1b5153a2152af9eeebdf75e9385d7711d86cc8d332b408064b669d355316dab12068ac612ec327af4e82850eaebeb13554cbd88152b5698575f7dd5689c46877369ad455b45afd9d4abe8d7af9f99306182b9edb6db8c2605501040e07f020408bf848a13d00c26854938bbcbde2d56e30776efa46fdfbec1f3eb3c145df7f9e79f9bb56bd79aad5bb71a8db9a8675348af42fb7e698b0fada5b8fefaebcd7df7dd57712e3c100295264080545a8bf03c27082848d47b50a86820db2e1aa4d640767b83d9e13561af62c0800146bd99db6fbfddb0f8911f1d02c9040890646e5ce558407b3c7dfbedb7c194581dd7ab13177ff9e5976055b6d69a141a107a2c858ac624d45b39e79c738c16335e79e595e6ce3bef74fcd4dc0e01bf050810bfdbbf536aaf05747abdb47efdfae0159382420715e9f592a6c216b26ec2ee416865b606da15109a22ab5e8502c8de4d589f9f3a756af4ba6be4c8919d5257be04019f0408109f5abb0c757de8a18782e9b08596f015936639697c63c890214683e8e3c78f0f5e35b57582a27a2ee140fcead5ab635fa9fbd863275ac847410081d2040890d2fcb8ba1d01adb2cefdcb5c972828c26d3baebefa6aa37fb42adb55d12c2b7b9ab07a2861510fc60e134dc7a5208040f1020448f1665c51a4c0ebafbf1e0c826b519e06c1f36d2078eaa9a706eb2a1a1a1a82cd025d0f6c6b4bf4706697fedb2ed5d5d551a05c7ae9a545d68e8f23e0af0001e26fdb97ade61a03d1a148da2bebbbefbe0b06ca738ba6d56a234105c9ecd9b3cd15575ce1ec8cee969696d80690eaad8445afcec2de89b649d776e9140410c82f4080f0cb28bb805680bff9e69be6dd77df0d7a29f6aa74fbe1b4a06fcc9831c19e525a01aecd085d14bd620b5f77691cc52e175f7c71744efcc489135d7c1df7402033020448669a323b153974e850f0ca6bf9f2e5c1b9197bf7eecd3b8d57272386af9f6ebae92627e7b66bfab03d76a2058a61d13e57f6d889ab00cb4ecb5113df040810df5a3c85f5d51a908f3efac82c5ebc389806ac9d70f38da368edc7d0a1438dce6c9f3b776ed05b29a568fab11d263a83dc2e93264d8a02a5d4ef2ae539b9168172091020e592e77b4b12d07e56dad74a9b20ea2f767bbb93f0c69a6da58d18350558db93e890268dad242d5bb66c890245abe3eda2f11abb77d2d674e3a4dfcf7508549a000152692dc2f32412d04245f550b40d7b535353b0057b6ed1d4611db9abe9c29a367ccd35d704abd493140596dd3bd1c248bb68003e0c948b2eba28c957700d02152f4080547c13f180490434b36ad9b265c158ca860d1b8295eaf9b643e9d3a78fd12a75f54e348e92f408d98d1b3746d384b5b3b05db441a3dd3bd1562b1404b220408064a115a943bb021acf78fffdf783d95e3acc4a3d967c5ba8e8d593fec2d7384a636363102ec5161d6b6b9f136f6fb1a2f52ef634619d54484120ad0204485a5b8ee72e5940e78e2c5cb830d8c071fbf6edc1be5cb9455b9ee82c774de1bde1861b8229bdc5160556f8ba4bb3caec52535313058a428b82409a04089034b516cfdaa1029ac2ab55f3eaa968b1a3bdc030fc628da3682b78ad0f99356b56f08f161f165a7446893d76a2e373c3a269c9f6abaeaaaaaa426fcbe710288b0001521676be340d025ad0b874e952f3ce3bef188d71d8fb69d9cfaf5d81478d1a15ac96bff1c61b838029b468357e18289a59669771e3c64581e27a6b97429f8fcf21d0960001c2ef038102053466b272e5ca2054b49f96c651f21d8bdbb3674f336cd830a37db5b499a4febb90a2d76876efc41ea3d1ec31bb779274f65821cfc167102854800029548acf21904760ddba7566d1a245e6d34f3f0dc651747c6e6ed1b9eae79f7fbed1c243cdf42ae45c752d94b4c364c78e1db1dbea1e61a0a8f74341a01c02044839d4f9cecc0ae82f7a6d14a959581a47d1b62cb945d3787552625d5d5db0a797f6f6d201596d15ad6d096776e9b5975d144ef6cc2eadc8a720d0190204486728f31dde0ae8585e4d1dd6ab2fcdfaca3d353184d13e5bea49e8e85dcdf6d2c691ad150dbcdbbd130dcc8745e1a43009173216fafaccdb06a2e22509102025f1713102c5091c3972c4bcfdf6dbe6adb7de327afda59d88f38da368669756b04f9b362d588fd2d6a1579a1a1c068aa60cdb65f8f0e1b1b193e29e964f23d0b60001c22f0481320b6883488da3ac59b3c6e81598bd0370f8685a80a86379ebebeb837194d6b696570fc7ee9dd85be3eb35993d10af7dc228089422408094a2c7b508748040737373b051a47620deba75abb1d78a845fa74d2175d895a6fa5e77dd75c1384abe73deb5ad4a18287a8566179d351f068a82898240b1020448b1627c1e814e16d8b76f9f79e38d378203b774e095c655f2158d9bd4d6d69a99336706bb0fe79e57a269c776efc45e79afb52c76efa46fdfbe9d5c4bbe2e8d0204481a5b8d67f65a40538575d896368b5cbf7ebdd120baf6faca2dbd7af53223468c0882e1e69b6f0ea612db250c13cdeed256f5769930614214285a754f41209f0001c2ef02810c08683f2ff552349eb273e74ea3c1fadca2e9bd1a8c6f68683073e6cc095e7f854567d3db1b40da81a429c7f6346105130501091020fc0e10c8a080c64e348ea235230a87c3870f9f504b1db8a5edebb54dcaecd9b383575f9a06ac417cfb5597f608b38b56d887d38493ec569c416e6fab448078dbf454dc278196969660a3488da36cdab4c9d8b3b342076d14a971141dcfab41798da36883478dbb8481b27af5ea189b6686d96327f906f27d72f6adae04886f2d4e7d11f8af804e54d45a148da5681dc9debd7bf31eb8a53db7aaababa37114ad4fb17b27f60693ead1d861d2d6da151a211b02044836da915a2050b280c640742cb01623eab595f6e3ca2d5a4b3274e8d0e0c0adb973e706632d61a06861a45dc2e051a8e8b517257b020448f6da941a21e04440fb6f691c4503f4dbb66d0b7a2db945bd0e1db8a5595b0a097b13c8df7efb2dfab87a2e76ef4403f394f40b1020e96f436a8040a70868bab0368ad4815b0a9703070e9cf0bd1a47d1415863c78e0d8e0656a068dc44e32876d1d4e03050143e94740a1020e96c379e1a81b20b6885fc92254bcc8a152bcc860d1b8203b78e1f3f7ec273f5e9d32778eda5334db486455bdfdbdbb568d1a2bd0164ee02c8b257940768558000e1c7810002ce04b4ebb04265eddab566d7ae5dc63e142bfc921e3d7a04bd14ad27d16c307dce2e3a3725ec9d684618a572050890ca6d1b9e0c81d40be82860bdf6d2388a0edcb2b74f092ba77114cdf6d21460cd06b38bd6a9d863270a1f4ae508102095d3163c09029917d8bd7b773030af995b3a70ebe0c18327d459e3289aeda5d761b981132e6054a868bb7b4a79050890f2faf3ed08782da0995a9a3aac3352b45bb0368ecc378ea25e4aeeeb300dd2dbbd13ada2a774ae0001d2b9de7c1b0208b421a0f0d0a0bcc651b4ae443d967ce328eaa5d841a3f352ec30c9dd3812f48e1120403ac695bb22808023010589c65174b689c6513493abbda2e381c340993c79727b1fe7cf130a102009e1b80c0104ca23a0595b0b162c08760fd636f4f682c57c4fa481f719336698e9d3a707a1a2196014370204881b47ee8200026512d082466d14a929c41a47d1b1be6d15ad9cd74691b366cd0a7622a62417204092db7125020854a0c0b163c782c3b6962e5d1a1cb8b567cf1ea3ff2d5fd1d461cde6bae5965b4c636363309d9852b8000152b8159f440081940aac59b326e8a584e328f9368a54d5f4ba4b679cdc71c71d66debc7929ad6de73d3601d279d67c13020854888006e3358ea2195ffa6f7b6b95f0119f7ffef9e03517a5750102845f070208782fb07fff7e337ffe7cb368d122d3dcdc6c344d588b1d355e422140f80d20800002083816a007e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b10001e21894db21800002be081020beb434f5440001041c0b10208e41b91d020820e08b0001e24b4b534f041040c0b1c07f00ec44bc3f489d32ba0000000049454e44ae426082	\N	\N	Preparateur	Controleur	9e74bad5-c9e7-445b-ad23-9e38baa4cf04	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	\N
 18a1fd87-3e0b-477f-a337-39709652df94	C00000031	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	retournee	397.00	\N	2026-04-13 20:21:23.171205+00	2026-04-13 20:20:29.891498+00	2026-04-13 20:24:38.920928+00	\N	1c2411aa-1f09-4c5d-8360-96180f6b4c54	\N	k	\N	Preparateur	Controleur	9e74bad5-c9e7-445b-ad23-9e38baa4cf04	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	\N
 9eac02e4-6c72-4e43-8eab-9a03d0b97c26	C00000032	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	200.22	\N	\N	2026-04-14 22:04:13.281688+00	2026-04-14 22:04:13.281688+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+634eadc7-857c-4ff9-8163-5b54a9eb0dda	C00000042	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	prete	852.58	\N	2026-06-15 15:51:37.064921+00	2026-06-15 15:51:36.801539+00	2026-06-15 15:51:40.249629+00	\N	0450c96e-c43b-47f9-bdd3-08e5a62b1ae7	\N	\N	3	Preparateur	Controleur	5afebd2a-5d57-469b-8dc1-1aaa3a437189	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	\N
+712e33d3-a45d-4ec6-82e1-488c453c04af	C00000039	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 15:50:37.853567+00	2026-06-15 15:50:37.758943+00	2026-06-15 15:50:37.850071+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	Quantité erronée, merci de corriger la ligne 1
+4557c818-1e9d-4727-b43e-bcc5492248d6	C00000040	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	198.50	\N	\N	2026-06-15 15:50:39.320869+00	2026-06-15 15:50:39.320869+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+846e1200-4c52-443a-8e39-3c7e1a60e6d0	C00000041	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	198.50	\N	\N	2026-06-15 15:50:41.907222+00	2026-06-15 15:50:41.907222+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+7646e2c0-c917-471f-98a8-29c2fc69479b	C00000033	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	en_route	852.58	\N	2026-06-15 15:50:25.453265+00	2026-06-15 15:50:25.373796+00	2026-06-15 15:50:28.296602+00	\N	0450c96e-c43b-47f9-bdd3-08e5a62b1ae7	\N	\N	3	Preparateur	Controleur	5afebd2a-5d57-469b-8dc1-1aaa3a437189	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	\N
+e7b4011b-5ed7-4f24-9ad2-2a04312b074e	C00000034	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	397.00	\N	\N	2026-06-15 15:50:29.721159+00	2026-06-15 15:50:29.721159+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+28b1f7b8-fe5e-45df-8bb4-c41ac4843a4c	C00000035	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	992.50	\N	\N	2026-06-15 15:50:31.065853+00	2026-06-15 15:50:31.175989+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+74e329cd-12fa-4a22-ac80-9c24b5d0e375	C00000036	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	annulee	198.50	\N	\N	2026-06-15 15:50:32.488775+00	2026-06-15 15:50:32.538317+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e	C00000037	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 15:50:34.336875+00	2026-06-15 15:50:33.9261+00	2026-06-15 15:50:34.331446+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+bdb4d02b-fdb8-481a-949a-1793843e552b	C00000038	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 15:50:36.343251+00	2026-06-15 15:50:36.296772+00	2026-06-15 15:50:36.337415+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+53b0ca21-ecda-4875-8b88-45e6a4426f74	C00000047	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 16:04:07.376717+00	2026-06-15 16:04:06.904612+00	2026-06-15 16:04:07.367451+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+b457ab88-16a4-423c-a37c-7c9373b01e00	C00000043	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	en_route	852.58	\N	2026-06-15 16:03:55.033887+00	2026-06-15 16:03:54.94945+00	2026-06-15 16:03:58.401873+00	\N	0450c96e-c43b-47f9-bdd3-08e5a62b1ae7	\N	\N	3	Preparateur	Controleur	5afebd2a-5d57-469b-8dc1-1aaa3a437189	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	\N
+06a1f38a-7a9b-4821-9370-040ff3df9e56	C00000044	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	397.00	\N	\N	2026-06-15 16:04:00.515329+00	2026-06-15 16:04:00.515329+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+7e3dbefd-9e34-4af7-8137-bd435e68555e	C00000048	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 16:04:10.06422+00	2026-06-15 16:04:10.006973+00	2026-06-15 16:04:10.056726+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+e23d80e3-a890-4a3a-801a-b2b74b3e07d6	C00000045	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	992.50	\N	\N	2026-06-15 16:04:02.638432+00	2026-06-15 16:04:02.774949+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+17f6af5e-4fd3-468b-8f54-1a522a6328da	C00000046	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	annulee	198.50	\N	\N	2026-06-15 16:04:04.809129+00	2026-06-15 16:04:04.852021+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+40505262-756a-49d3-9366-d9b9feb92cd6	C00000051	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	198.50	\N	\N	2026-06-15 16:04:18.57493+00	2026-06-15 16:04:18.57493+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+afd7ad6c-776b-4c2c-9c6a-ce0134c65366	C00000049	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 16:04:12.361571+00	2026-06-15 16:04:12.237768+00	2026-06-15 16:04:12.349117+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	Quantité erronée, merci de corriger la ligne 1
+5913d330-9751-4b2e-b4d8-1696ce89b897	C00000050	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	198.50	\N	\N	2026-06-15 16:04:14.558401+00	2026-06-15 16:04:14.558401+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+a90de1fe-e8f3-4c96-8107-69eba971d1a8	C00000052	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	prete	852.58	\N	2026-06-15 16:04:51.794467+00	2026-06-15 16:04:51.475748+00	2026-06-15 16:04:55.104675+00	\N	0450c96e-c43b-47f9-bdd3-08e5a62b1ae7	\N	\N	2	Preparateur	Controleur	5afebd2a-5d57-469b-8dc1-1aaa3a437189	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	\N
+c7c6368e-e59a-49c9-b59d-1c42c7f6d935	C00000054	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	en_route	852.58	\N	2026-06-15 16:43:18.653643+00	2026-06-15 16:43:18.567044+00	2026-06-15 16:43:21.268378+00	\N	0450c96e-c43b-47f9-bdd3-08e5a62b1ae7	\N	\N	3	Preparateur	Controleur	5afebd2a-5d57-469b-8dc1-1aaa3a437189	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	\N
+70932ee6-bdba-4e93-b487-e0e51c7452f9	C00000053	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	prete	1688.63	\N	2026-06-15 16:14:02.731244+00	2026-06-15 16:12:09.835448+00	2026-06-15 16:20:36.975657+00	\N	1c2411aa-1f09-4c5d-8360-96180f6b4c54	\N	\N	4	Preparateur	Controleur	777b09a3-e9bf-42bb-9187-bc037bf8af6e	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	\N
+0b133ab5-eeb5-42b1-8079-3e31ad4f13aa	C00000055	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	397.00	\N	\N	2026-06-15 16:43:23.151611+00	2026-06-15 16:43:23.151611+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+f619698f-e21f-4f0a-9fc3-e615b19b2d35	C00000056	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	992.50	\N	\N	2026-06-15 16:43:24.668551+00	2026-06-15 16:43:24.816121+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+fbceed4c-73b9-475f-9ebc-48f2aed910f9	C00000057	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	annulee	198.50	\N	\N	2026-06-15 16:43:26.219427+00	2026-06-15 16:43:26.251427+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+9d504663-a4f6-4855-bdec-407cfabc199a	C00000058	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 16:43:27.99631+00	2026-06-15 16:43:27.547502+00	2026-06-15 16:43:27.985656+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+54d4a168-cd3c-4ad7-8531-def1a75875e3	C00000059	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 16:43:29.848599+00	2026-06-15 16:43:29.803905+00	2026-06-15 16:43:29.840087+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd	C00000060	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 16:43:31.272025+00	2026-06-15 16:43:31.18495+00	2026-06-15 16:43:31.265314+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	Quantité erronée, merci de corriger la ligne 1
+2a5a4167-cccc-4d00-87b1-0eff74f20216	C00000061	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	198.50	\N	\N	2026-06-15 16:43:32.672836+00	2026-06-15 16:43:32.672836+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+b705c340-b2ca-4528-91b2-f3ca83436d38	C00000062	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	198.50	\N	\N	2026-06-15 16:43:35.410846+00	2026-06-15 16:43:35.410846+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	C00000063	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	en_route	852.58	\N	2026-06-15 16:53:28.381385+00	2026-06-15 16:53:28.275024+00	2026-06-15 16:53:31.35922+00	\N	0450c96e-c43b-47f9-bdd3-08e5a62b1ae7	\N	\N	3	Preparateur	Controleur	5afebd2a-5d57-469b-8dc1-1aaa3a437189	3fce8dc2-16e0-4ce6-b41c-c0657216eb62	\N
+453dcf46-2d66-4bd3-b62d-7fb36a3effc4	C00000064	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	397.00	\N	\N	2026-06-15 16:53:37.187753+00	2026-06-15 16:53:37.187753+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+2fc0b24c-d935-4eac-9157-8563b3a8f368	C00000065	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	992.50	\N	\N	2026-06-15 16:53:38.572381+00	2026-06-15 16:53:38.69785+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+d9a2e9ba-5d30-42c9-a776-f05e2ba3c181	C00000066	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	annulee	198.50	\N	\N	2026-06-15 16:53:40.012486+00	2026-06-15 16:53:40.060369+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+1c82273c-17f9-46c1-984b-ba0d11ce9022	C00000067	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 16:53:41.893898+00	2026-06-15 16:53:41.444322+00	2026-06-15 16:53:41.885247+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5	C00000068	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 16:53:43.890221+00	2026-06-15 16:53:43.832536+00	2026-06-15 16:53:43.880048+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+5b7c805d-1652-4f86-997e-88a6cedb2195	C00000069	80b3ae99-edfc-4220-a471-03c5366fb10d	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	acceptee	198.50	\N	2026-06-15 16:53:45.464283+00	2026-06-15 16:53:45.365555+00	2026-06-15 16:53:45.454935+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	Quantité erronée, merci de corriger la ligne 1
+84f1e647-a353-47f8-9bdf-ee221e62ca60	C00000070	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	198.50	\N	\N	2026-06-15 16:53:46.915217+00	2026-06-15 16:53:46.915217+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+d24acb48-0718-4829-a4ed-fe14a7802da7	C00000071	80b3ae99-edfc-4220-a471-03c5366fb10d	\N	creee	198.50	\N	\N	2026-06-15 16:53:49.849639+00	2026-06-15 16:53:49.849639+00	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+\.
+
+
+--
+-- Data for Name: creances; Type: TABLE DATA; Schema: public; Owner: dimed
+--
+
+COPY public.creances (id, pharmacien_id, facture_id, montant_total, montant_paye, statut, echeance, created_at, updated_at, created_by) FROM stdin;
+c9e75bb7-acc9-41c1-a09f-3d27d6eeb2b2	80b3ae99-edfc-4220-a471-03c5366fb10d	046d60a0-8f87-4529-a5c3-7dfafef7dc89	852.58	0.00	en_attente	2026-07-15	2026-06-15 15:50:25.440264+00	2026-06-15 15:50:25.440264+00	\N
+c3ba29be-1f17-4bde-80e2-a2646ed34db2	80b3ae99-edfc-4220-a471-03c5366fb10d	36da2157-5f10-44ff-af9a-d9cca814d0ef	198.50	0.00	en_attente	2026-07-15	2026-06-15 15:50:34.331446+00	2026-06-15 15:50:34.331446+00	\N
+d070fdf9-7784-4036-9393-3ce27a558207	80b3ae99-edfc-4220-a471-03c5366fb10d	77f5887f-3062-44fe-bfa1-c778a8b6e8e1	198.50	0.00	en_attente	2026-07-15	2026-06-15 15:50:36.337415+00	2026-06-15 15:50:36.337415+00	\N
+6f346a45-b7b2-429c-9697-c92e153684cd	80b3ae99-edfc-4220-a471-03c5366fb10d	e91fc11a-f8c2-4977-8d51-04e9efdf4288	198.50	0.00	en_attente	2026-07-15	2026-06-15 15:50:37.850071+00	2026-06-15 15:50:37.850071+00	\N
+f1ed1bd1-0fb9-421f-8cf5-9b02d20c8129	80b3ae99-edfc-4220-a471-03c5366fb10d	70f35145-f5af-4763-907b-acc82e696f46	852.58	0.00	en_attente	2026-07-15	2026-06-15 15:51:37.056864+00	2026-06-15 15:51:37.056864+00	\N
+0bb1f412-e3bd-4edd-b974-af7c1afaef02	80b3ae99-edfc-4220-a471-03c5366fb10d	905ea0a2-811c-4610-85ba-7c45e9b74124	852.58	0.00	en_attente	2026-07-15	2026-06-15 16:03:55.016795+00	2026-06-15 16:03:55.016795+00	\N
+ce68b54e-76ce-4f0f-838c-0191ce205ea7	80b3ae99-edfc-4220-a471-03c5366fb10d	916b66d7-ef8d-4016-86db-d1c21b95e4ac	198.50	0.00	en_attente	2026-07-15	2026-06-15 16:04:07.367451+00	2026-06-15 16:04:07.367451+00	\N
+c0f369ea-97e2-4192-a844-ad158d6851b3	80b3ae99-edfc-4220-a471-03c5366fb10d	2da19ffc-1863-43e7-8606-9c32287eee54	198.50	0.00	en_attente	2026-07-15	2026-06-15 16:04:10.056726+00	2026-06-15 16:04:10.056726+00	\N
+89e42005-8e22-4562-812b-02b100466d58	80b3ae99-edfc-4220-a471-03c5366fb10d	b294d7fb-9f0e-4565-b577-e06b7ce9735c	198.50	0.00	en_attente	2026-07-15	2026-06-15 16:04:12.349117+00	2026-06-15 16:04:12.349117+00	\N
+e480aff8-9d2d-4b8c-9a1f-6abde50d4161	80b3ae99-edfc-4220-a471-03c5366fb10d	cbdeddeb-90ad-4a39-a18a-22d6fe271001	852.58	0.00	en_attente	2026-07-15	2026-06-15 16:04:51.786482+00	2026-06-15 16:04:51.786482+00	\N
+bdead561-912d-4c66-a819-2c2ab91d5560	80b3ae99-edfc-4220-a471-03c5366fb10d	73fb6564-1952-4140-b828-cd51002bad57	1688.63	0.00	en_attente	2026-07-15	2026-06-15 16:14:02.696749+00	2026-06-15 16:14:02.696749+00	\N
+3d207881-2cad-4c03-b44d-d92a8e076803	80b3ae99-edfc-4220-a471-03c5366fb10d	bc33a881-5a97-4eee-a342-ac5d750f0c03	852.58	0.00	en_attente	2026-07-15	2026-06-15 16:43:18.644412+00	2026-06-15 16:43:18.644412+00	\N
+2698d758-aad2-44f1-9264-51b946b65cb1	80b3ae99-edfc-4220-a471-03c5366fb10d	b9f235d9-8e88-48a3-b54a-2a8d608a53c8	198.50	0.00	en_attente	2026-07-15	2026-06-15 16:43:27.985656+00	2026-06-15 16:43:27.985656+00	\N
+ac34b4e2-ebb4-420a-a56e-984476235897	80b3ae99-edfc-4220-a471-03c5366fb10d	17075960-1745-48e1-ad66-0f1508214537	198.50	0.00	en_attente	2026-07-15	2026-06-15 16:43:29.840087+00	2026-06-15 16:43:29.840087+00	\N
+6acf13a0-dcdf-4c18-b3f7-565ab1d8f76b	80b3ae99-edfc-4220-a471-03c5366fb10d	ac1b4eee-b02c-42bd-a3cd-3856df14b813	198.50	0.00	en_attente	2026-07-15	2026-06-15 16:43:31.265314+00	2026-06-15 16:43:31.265314+00	\N
+83af5001-8f3b-4114-ae6e-d8c3253764be	80b3ae99-edfc-4220-a471-03c5366fb10d	62097201-b302-4f98-a35f-2046c88d4d1c	852.58	0.00	en_attente	2026-07-15	2026-06-15 16:53:28.367368+00	2026-06-15 16:53:28.367368+00	\N
+7b0b5387-9832-4f75-b50b-fed1b6db5aa9	80b3ae99-edfc-4220-a471-03c5366fb10d	592ba8bd-ebfa-4cf4-9ecb-eaf0c4f95369	198.50	0.00	en_attente	2026-07-15	2026-06-15 16:53:41.885247+00	2026-06-15 16:53:41.885247+00	\N
+fff05989-44b3-458a-a0e3-8dc0504f0fe4	80b3ae99-edfc-4220-a471-03c5366fb10d	7e944020-3254-4f86-b8f9-3b34636f65b7	198.50	0.00	en_attente	2026-07-15	2026-06-15 16:53:43.880048+00	2026-06-15 16:53:43.880048+00	\N
+19e840a9-94e1-4dd1-b54b-e0aaf6fa811a	80b3ae99-edfc-4220-a471-03c5366fb10d	e5c33d2f-432b-40f7-b114-67acaa6062fe	198.50	0.00	en_attente	2026-07-15	2026-06-15 16:53:45.454935+00	2026-06-15 16:53:45.454935+00	\N
 \.
 
 
@@ -1065,6 +1847,25 @@ c094a7f2-98c5-4320-b43b-0bbe49812bb5	F0000000015	48615e40-3d72-40e0-924d-fa4ea9a
 1ca1f1f2-5024-410c-98bf-50f870134326	F0000000017	6e7ffbab-0205-4987-b782-0f9dfae7d304	2026-04-13 20:14:14.444203+00	852.58	852.58	2026-04-13 20:14:14.410049+00	2026-04-13 20:14:14.410049+00	\N
 80c2ab2f-a695-471d-81b9-6f6238505c24	F0000000018	18a1fd87-3e0b-477f-a337-39709652df94	2026-04-13 20:21:23.188874+00	397.00	397.00	2026-04-13 20:21:23.16632+00	2026-04-13 20:21:23.16632+00	\N
 7fc27e9e-9a6c-4d37-a39c-191626f13d8e	F0000000019	81b6516c-629b-4d80-82d5-24a7801ae726	2026-04-13 20:21:37.469809+00	911.16	911.16	2026-04-13 20:21:37.447254+00	2026-04-13 20:21:37.447254+00	\N
+046d60a0-8f87-4529-a5c3-7dfafef7dc89	F0000000020	7646e2c0-c917-471f-98a8-29c2fc69479b	2026-06-15 15:50:25.4822+00	852.58	852.58	2026-06-15 15:50:25.440264+00	2026-06-15 15:50:25.440264+00	\N
+36da2157-5f10-44ff-af9a-d9cca814d0ef	F0000000021	3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e	2026-06-15 15:50:34.356499+00	198.50	198.50	2026-06-15 15:50:34.331446+00	2026-06-15 15:50:34.331446+00	\N
+77f5887f-3062-44fe-bfa1-c778a8b6e8e1	F0000000022	bdb4d02b-fdb8-481a-949a-1793843e552b	2026-06-15 15:50:36.360829+00	198.50	198.50	2026-06-15 15:50:36.337415+00	2026-06-15 15:50:36.337415+00	\N
+e91fc11a-f8c2-4977-8d51-04e9efdf4288	F0000000023	712e33d3-a45d-4ec6-82e1-488c453c04af	2026-06-15 15:50:37.869143+00	198.50	198.50	2026-06-15 15:50:37.850071+00	2026-06-15 15:50:37.850071+00	\N
+70f35145-f5af-4763-907b-acc82e696f46	F0000000024	634eadc7-857c-4ff9-8163-5b54a9eb0dda	2026-06-15 15:51:37.080196+00	852.58	852.58	2026-06-15 15:51:37.056864+00	2026-06-15 15:51:37.056864+00	\N
+905ea0a2-811c-4610-85ba-7c45e9b74124	F0000000025	b457ab88-16a4-423c-a37c-7c9373b01e00	2026-06-15 16:03:55.072684+00	852.58	852.58	2026-06-15 16:03:55.016795+00	2026-06-15 16:03:55.016795+00	\N
+916b66d7-ef8d-4016-86db-d1c21b95e4ac	F0000000026	53b0ca21-ecda-4875-8b88-45e6a4426f74	2026-06-15 16:04:07.405483+00	198.50	198.50	2026-06-15 16:04:07.367451+00	2026-06-15 16:04:07.367451+00	\N
+2da19ffc-1863-43e7-8606-9c32287eee54	F0000000027	7e3dbefd-9e34-4af7-8137-bd435e68555e	2026-06-15 16:04:10.082811+00	198.50	198.50	2026-06-15 16:04:10.056726+00	2026-06-15 16:04:10.056726+00	\N
+b294d7fb-9f0e-4565-b577-e06b7ce9735c	F0000000028	afd7ad6c-776b-4c2c-9c6a-ce0134c65366	2026-06-15 16:04:12.37994+00	198.50	198.50	2026-06-15 16:04:12.349117+00	2026-06-15 16:04:12.349117+00	\N
+cbdeddeb-90ad-4a39-a18a-22d6fe271001	F0000000029	a90de1fe-e8f3-4c96-8107-69eba971d1a8	2026-06-15 16:04:51.819051+00	852.58	852.58	2026-06-15 16:04:51.786482+00	2026-06-15 16:04:51.786482+00	\N
+73fb6564-1952-4140-b828-cd51002bad57	F0000000030	70932ee6-bdba-4e93-b487-e0e51c7452f9	2026-06-15 16:14:02.797822+00	1688.63	1688.63	2026-06-15 16:14:02.696749+00	2026-06-15 16:14:02.696749+00	\N
+bc33a881-5a97-4eee-a342-ac5d750f0c03	F0000000031	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	2026-06-15 16:43:18.690721+00	852.58	852.58	2026-06-15 16:43:18.644412+00	2026-06-15 16:43:18.644412+00	\N
+b9f235d9-8e88-48a3-b54a-2a8d608a53c8	F0000000032	9d504663-a4f6-4855-bdec-407cfabc199a	2026-06-15 16:43:28.020842+00	198.50	198.50	2026-06-15 16:43:27.985656+00	2026-06-15 16:43:27.985656+00	\N
+17075960-1745-48e1-ad66-0f1508214537	F0000000033	54d4a168-cd3c-4ad7-8531-def1a75875e3	2026-06-15 16:43:29.866499+00	198.50	198.50	2026-06-15 16:43:29.840087+00	2026-06-15 16:43:29.840087+00	\N
+ac1b4eee-b02c-42bd-a3cd-3856df14b813	F0000000034	a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd	2026-06-15 16:43:31.29062+00	198.50	198.50	2026-06-15 16:43:31.265314+00	2026-06-15 16:43:31.265314+00	\N
+62097201-b302-4f98-a35f-2046c88d4d1c	F0000000035	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	2026-06-15 16:53:28.424281+00	852.58	852.58	2026-06-15 16:53:28.367368+00	2026-06-15 16:53:28.367368+00	\N
+592ba8bd-ebfa-4cf4-9ecb-eaf0c4f95369	F0000000036	1c82273c-17f9-46c1-984b-ba0d11ce9022	2026-06-15 16:53:41.917583+00	198.50	198.50	2026-06-15 16:53:41.885247+00	2026-06-15 16:53:41.885247+00	\N
+7e944020-3254-4f86-b8f9-3b34636f65b7	F0000000037	e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5	2026-06-15 16:53:43.915662+00	198.50	198.50	2026-06-15 16:53:43.880048+00	2026-06-15 16:53:43.880048+00	\N
+e5c33d2f-432b-40f7-b114-67acaa6062fe	F0000000038	5b7c805d-1652-4f86-997e-88a6cedb2195	2026-06-15 16:53:45.483194+00	198.50	198.50	2026-06-15 16:53:45.454935+00	2026-06-15 16:53:45.454935+00	\N
 \.
 
 
@@ -1076,6 +1877,8 @@ COPY public.feuilles_route (id, date, ligne, n_rotation, compteurs, signature_ex
 f969c5ec-cc7e-4f7f-a504-a5a893c143f3	2026-04-13	\N	\N	{"colis_frg": 0, "colis_std": 0, "sachets_frg": 0, "sachets_std": 0}	\N	\N	2026-04-13 12:15:51.671095+00	2026-04-13 12:15:51.671095+00	\N	0450c96e-c43b-47f9-bdd3-08e5a62b1ae7	\N	f
 7ea42bcb-2193-47f0-a179-57d7cded6983	2026-04-13	\N	\N	{"colis_frg": 0, "colis_std": 0, "sachets_frg": 0, "sachets_std": 0}	\N	\N	2026-04-13 12:42:15.386114+00	2026-04-13 12:42:15.386114+00	\N	7785e358-83c4-41e6-9e6b-db5ded7b6e97	\N	f
 9e74bad5-c9e7-445b-ad23-9e38baa4cf04	2026-04-13	\N	\N	{"colis_frg": 0, "colis_std": 0, "sachets_frg": 0, "sachets_std": 0}	\\x89504e470d0a1a0a0000000d4948445200000190000000c80806000000c615b7e20000175d49444154785eed9d7bb04ed51bc71fd7248d92492e07c749145108dd268a3049431a06a5c91499cc344991421a638cd1f4c398728e1974c1942e68488929868c4b724fe290831cf507720bbf9ef56b9ddf76bceff1dae7bdacbdf767cd98739c77afb59ee7f3acd9df77ddcb5cf8270909021080000420708504ca202057488cc72100010840c010404068081080000420e08b0002e20b1b9920000108400001a10d4000021080802f0208882f6c64820004200001048436000108400002be082020beb0910902108000041010da000420000108f8228080f8c246260840000210404068031080000420e08b0002e20b1b9920000108400001a10d4000021080802f0208882f6c64820004200001048436000108400002be082020beb0910902108000041010da000420000108f8228080f8c246260840000210404068031080000420e08b0002e20b1b9920000108400001a10d4000021080802f0208882f6c64820004200001048436000108400002be082020beb0910902108000041010da000420000108f8228080f8c246260840000210404068031080000420e08b0002e20b1b9920000108400001a10d4000021080802f0208882f6c64820004200001048436000108400002be082020beb0910902108000041010da000420000108f8228080f8c246260840000210404068031080000420e08b0002e20b1b9920000108400001a10d4000021080802f0208882f6c64820004200001048436000108400002be082020beb0910902108000041010da000420000108f8228080f8c246260840000210404068031080000420e08b0002e20b1b9920000108400001a10d4000021080802f0208882f6c64820004200001048436000108400002be082020beb0910902108000041010da000420000108f8228080f8c246260840000210404068031080000420e08b0002e20b1b9920000108400001a10d4000021080802f0208882f6c64820004200001048436000108400002be082020beb0910902108000041010da000420000108f8228080f8c2462608049bc080010364d1a24552ae5c392953a68c1c387020d80e617d4608202019c14ea510480f8159b366c9881123e4c2850ba642150bfd573ce9e7050505e9318a5a42430001094d287124ea04ead5ab2767ce9cb94820628985e56445e5fcf9f372e8d0a1a8e3c37f1f0410101fd0c802814c123876ec98346edcb8a857616d8927165628bc36d3dbc86404c3533702129e58e2490809ac5bb74eba75eb5634fce41d8a8a350c65ffa6bd8ab265cbcae4c993a567cf9e2124834b2e1040405c88023640e01f022fbef8a2cc9933c70c41e9e4b626158c787316f673fd59b56a5551b1a952a50a2c219036020848da50531104fe4fa043870eb279f366d34bd06445229e58d89e87feccc9c99155ab5681130219278080643c04181076024d9b3695c2c2c28b5640c5130afdbb0e3f69d29f8f3efaa8e4e5e5851d11fe0594000212d0c061b69b04b2b3b3e5d4a95309f52aac07564c468d1a2503070e74d331ac82400c020808cd02020912e8dbb7afac5cb9524e9f3e6d869e7438c90e41696f21de1e0b2ddece65d89f6cdc4b103a8f394d0001713a3c18970e02eddbb797ddbb779b3d145618540cbc13d825eda7f0da587cc96cf9f2e565dfbe7de970833a209076020848da9153613a087cf2c927326edc383972e4889c3b77cef40e62ad684a54186c2f22566fc296ab2ba07efef9e774b8471d1070820002e2441830225102bad475c99225a29be9f4c56d5fde5e8188b7f435561dde1e43f161263b2ca5bd88871e7a4866ce9c99a8993c078148104040421ee6f1e3c78b7e1bd7a32a62bd70adfbf6055c7c38c67e43f7be947598e7aaabae92060d1ac8fdf7df2f3af99b689a366d9a2c58b0407efdf5573979f2a49c3d7bd60c1bd9d547f17a0a5e3b13adcbbbe9ceda6f37d869af44f74ebcf1c61bd2af5fbf448be4390840c0430001096873183b76accc9f3fdf2c0ff50a437177ae6488a63428621d97e12d2f597614afc7db6b50215261b8e9a69be495575e913e7dfa94c625f24200029721808038d644468e1c299f7ffeb9fcf9e79f45ab7cec508a9f6fe125b957d2b11899c2527c48a9780f497768df70c30dd2a64d1b993e7d7aa6cca45e0840e01f02088843cda056ad5a318fad70c844634abc5e807e56d206b958bd94d2f64cbc3d106b9b77d8cdbbd4567b28d75f7fbd346ad448de7fff7db9faeaab5d438b3d1008140104c4a170c51390cb0d0fc57a717a5fa27669aa1deaf2fedffeae65684fa742850a86887ed3af5cb9b2f9a72fdd5b6eb9451e7bec31b9f5d65ba56eddba49a1a6f5e97e8861c386c9962d5bccc4b80e41fdfdf7df17eda9f0cebff8595a1bcfd8785cade8585efab362c58a4670ead4a923bd7bf796679f7d36290c280402412680803816bdefbfffbee89bb18a40eddab5cd983ee95202ba30e0cd37df3487081e3d7ad4ec002fde2389b508c096549ade4f49e2535cbcf5ffbae8a0468d1ad2b9736779e18517a45ab56a84140281278080043e8438e097c05b6fbd25cb962d93fdfbf79bdde5da232abea33cde92e064888f77e55bf15e967743a3f606f54b448b162de4e5975f36bda04a952af9759b7c10481a010424692829284a04740e45ffe5e7e79be5c83af4e6151fefc207af50944678bc4395b607144f78ece7daf3b9e69a6bcc05544f3ffdb4399c910481641140409245927220902001dd07f3c1071fc8ce9d3be58f3ffe289af3f10a44f1df933deca69b2367cf9e2deddab54bd06a1e83c0a50410105a0504024660c08001f2d34f3fc9efbfff5ed4f3f1f67e626d0a55178bf77ebcf338baa972fbf6ed012381b999268080643a02d40f813412e8dab5ab6cd8b0a1a8c658436a3a1ca793fd1cdd92c6c004b42a0424a081c36c089496c0debd7be581071eb8e414623b7c667fea84fed4a953a57bf7eea5ad92fc21238080842ca0b80301bf04468f1e2db9b9b9317b27de49fbebaebb8ee12ebf9043960f01095940710702c922a057f1ea24bf4ddee12eeffc49972e5d64c68c19c9aa9672024400010950b0a264eabbefbe2bdf7efbad39b537272747e6cd9b1725f79df3554f0cd0f3c75438ec89c65e23ada0e89e95c58b178b8a0f29fc041090f0c7d8190f75d5d0bdf7de6b96adea31eefa228a95e29da7d5bf7f7fd1e3e94999273068d02059b870e1251b2fad6536b67ac9d6ae5dbb326f3016a48400029212ac141a8b40b20e8bfcf0c30fd9bfe05813d3b3d28e1f3f6eac8ab55cd8f65074d27eeedcb98e598f397e0920207ec991ef8a09dc79e79d72f8f0e18b5e30f6c5a287156667679ba18f2953a65c54b61eb6a8a2e13d634a7758efd9b3e78a6d2043ea09e8f2dfd75e7beda2db22630d77e9ea2ebd76587b96a4601240408219b7405b5daf5e3d338455d2c636dd297dd75d77994bb36cd2db0f77efde7d9190d4ac5953d6af5f1f681e6137be43870eb275ebd6a2b8c58abbfe4d4f7ed6ddf92a2ca4601040408211a7505aa9435a36c53b23cabbda475f2c3aa16e0f3fb479f5998e1d3bcaac59b342c9294c4e9d3973c6dcc7a23f631d5469ffa69b1975d2fe8b2fbe0893fba1f30501095d4883eb50ebd6adcdfd205ed18837a1eebd28ca7aac13b73a24f2cc33cf041742c42c1f356a94e4e5e519afe3c5da22d17d2a03070e8c1821b7dd4540dc8e4fe4adebd4a9936cdbb6cdacdcb22f99924eb42d7e4aad3d174a2fcad263d0f5ae74bd188be426019d03d3bb5d6c8ce30d73ea1c980e6732dc95d938222099e54fed3e08f4e9d347befbee3bb384b4f8304822c7a5c7ba0c4af3d963cff5b45c921b04b2b2b262c659adb371d4f9b27dfbf6b96170c4ac40402216f0b0bbdba3470f59b366cd252bbdacd0242230de9793fd5df3e92639bddeb77dfbf6f29ffffc27ec289df34f174c681c62f54a0a0a0a9cb3370a062120518872047db4df5cad00785f30bd7af5928d1b379a7d0bf65bacf7a59488c878f379afd1d5e5c8faa21b3e7c384365a56877ba6c5b19ea64fae5165828733d1892947e020848fa9953639a08d8fd08f605a413f489a4c2c242e9d9b3a7b96d50ef59b7c9afc878ebb4cb5575ac5f6f34d49dda2491b163c7caf4e9d38b4e272869f184f2aa5fbfbeac5ebd1a7419268080643800549f5a023aa4f5c30f3f984aaa55ab269b376f4e4a857a9ffaa79f7e2a2a36de09fee262515265b1e662f4793b54a60b08264e9c98147b5d2b64e8d0a13267ce9c8be6b04ada17c4818dae45f07ff620206ec605ab924840bfadeac6454d3a019f8e97f289132764f0e0c1e65bb2feeebd23fd4a44469f8d25343a6c53bb76edc0ac2aebdbb7af2c5fbebcc8f578626197673ff1c413f2ce3bef24b11550542a082020a9a04a99ce11d097ad4d4b972e95264d9a64dc46ed198d1831c29c381c6f63dd95ccc7141726ddd97dfbedb7cba44993cc3131e94cf7dd779ffcf2cb2f45cb6c4bea5da85d43860c312c48c1228080042b5e58eb93c08a152b44bf05db6ff44159b53361c20473f8a0ee8d8875fc8bfa73399149c75059ab56adcc26506bcfe58ea979fbedb7cd3c1329d804109060c70febaf80c0934f3e69ee18d194ccf9902b3021e98fdaa1325dbaacabca923d54663760befaeaabd2ad5b3763bfd6d3b2654b3976ec58913ff1ceb7527b74b84d0fc8b4f9930e810233460001c9187a2ace0481060d1ac8e9d3a7cdbc827e039e3c797226cc487b9deddab5339bed4e9e3c19f3a57fb95e8cedb9d9cc25f53058569bf6f066ac42042463e8a9385304ecbd242a227a29927e9b8e7ab2abcaf40a5b9d8fb147c05cee48116558b56a55d9b16347d41146d27f042492618fb6d33a8cd5af5f3ff392d4219683070f461b4882deeb1cd2dab56b4587b5f47c3212041010da402409e8a9ae8b162d32beeb6a25ae5d8d6433c0e9521240404a0990ecc125d0b06143f9ebafbf8c035dbb7695f7de7b2fb8ce60390432400001c90074aa748780777f889ec2cb7c883bb1c112f7092020eec7080b534840afc3f52e2f4df4bcac149a44d110080c01042430a1c2d05411f0ce87e84545ba339c0401085c9e00027279463c1101027ae4872e61d5f4e0830f9a937249108040c90410105a0804fe2560f787e87ff53e0add7c47820004e2134040681d10f897c0d6ad5be5e1871f2ee2c17c084d0302f4406803104898c0b061c3e4a38f3e32cfeb86396eba4b181d0f4690003d9008061d974b26e09d0f69d3a68db9388a0401085c4a0001a15540200601effe10dd60a81b0d491080c0c50410105a04046210d8bf7fbfb46ddb96f9105a07044a208080d03c201087c0983163243737d77c5abe7c79c9cfcf87150420e0218080d01c205002013ddae4d0a143e68966cd9ac9e2c58be1050108fc4b0001a12940e03204bcf3217a156baf5ebd60060108fc430001a11940e03204b407e23d6471cf9e3de69a561204a24e0001897a0bc0ff84084c9a3449b4f7a1a96cd9b2a293ec2408449d000212f51680ff0913b8fbeebbcdbde29a980f49181b0f8698000212e2e0e25af209d4a95347f41e704dda2be9ddbb77f22ba144080484000212904061a63b04eca18b2a24050505ee188625104833010424cdc0a92ef804e6ce9d2b43870e358e301f12fc78e2817f0208887f76e48c3081be7dfbca8a152b0c81ba75ebcaead5ab234c03d7a34a0001896ae4f1bbd4046ebef9663979f2a429e7a9a79e92f1e3c797ba4c0a804090082020418a16b63a47c0bbc970e9d2a5d2a44913e76cc42008a48a0002922ab2941b0902ebd7af976eddba15f9ca255491083b4efe4b0001a12940a09404468c1821b367cf36a554ae5c5976edda55ca12c90e8160104040821127ac749c807793a1dea5ae77aa93201076020848d8238c7f692390959525e7cf9f37f5b1c9306dd8a928830410900cc2a7ea7011282c2c94e6cd9b1739b569d326a95ebd7ab89cc41b0878082020340708249180779361b972e58acece4a621514050167082020ce840243c242c0bbc9b061c386451b0ec3e21f7e40c0124040680b104801819c9c1c3975ea9429f9f9e79f97d75f7f3d05b5502404324b0001c92c7f6a0f310136198638b8b866082020340408a488009b0c530496629d21808038130a0c092301ef26c32a55aac8ce9d3bc3e8263e4594000212d1c0e376fa08b0c9307daca929bd041090f4f2a6b68812d023dfcf9d3b67bc679361441b4108dd46404218545c728fc0c18307a555ab564586e979597a6e1609024126808004397ad81e2802b9b9b93266cc186373f9f2e5253f3f3f50f6632c048a134040681310482381eeddbbcbdab56b4d8d6c324c2378aa4a090104242558291402f109b0c990d611160208485822891f8122c026c340850b63e3104040681a10c80001361966003a55269d00029274a4140881c4087837195e7bedb5b263c78ec432f214041c218080381208cc882681162d5ac8e1c3878df35dba7491bcbcbc6882c0eb401240400219368c0e13813a75eac8850b178c4bd3a74f97471e79244ceee14b88092020210e2eae0583009b0c831127acbc94000242ab80800304bc9b0cb9c9d081806042420410908430f11004524f4087ae7efcf14753d190214364f8f0e1a9af941a20500a02084829e0911502c92650bf7e7d397bf6ac54a85041f6eedd9bece2290f02492580802415278541a07404bef9e61be9dfbfbf2964ead4a9a2479f9020e02a0104c4d5c860576409d85e48c58a1565cf9e3d91e580e3ee134040dc8f1116468cc0ecd9b34537196afaecb3cfa475ebd6112380bb41218080042552d8192902f6022aaec18d54d803e72c0212b890617014088c1b374ea64d9b665c5db972a564676747c16d7c0c180104246001c3dce810b027f656ab564d366fde1c1dc7f13430041090c0840a43a34660d0a041b270e142e3f6860d1ba4468d1a514380bf8e1340401c0f10e6459b80ed85646565c99a356ba20d03ef9d2380803817120c82c0ff093cfef8e345c2b17bf76ea954a9127820e00c0104c499506008046213b0bd90c68d1bcbb265cbc0040167082020ce84024320109b40870e1d64fbf6ede6c303070e800902ce1040409c0905864020368153a74e494e4e8ef9f09e7bee918f3ffe18541070820002e244183002022513d0dde8dafbd08ba70a0a0ac00501270820204e84012320503201bdf656afbfd5d4af5f3f99306102c8209071020848c643800110488c40d3a64de5cf3fff943265cac86fbffd9658269e82400a09202029844bd1104826816ddbb649c78e1d4d9183070f9691234726b378ca82c015134040ae181919209039028d1a3592e3c78f1b03589195b93850f3ff082020b404080488c0f2e5cbcd1c88a6ce9d3bcb8c193302643da6868d000212b688e24fe809dc71c71d72e4c811e3e7ba75eba466cd9aa1f71907dd248080b81917ac82405c02858585d2bc7973f3f98d37de281b376e84160432420001c908762a8540e908e804facc99334d2113274e943e7dfa94ae407243c0070104c40734b240c00502ba3b5d77a9972d5b56f6efdfef8249d81031020848c4028ebbe121a03715f6ead5cb38d4b66d5b993f7f7e789cc393401040400211268c84406c029d3a75922d5bb6980fbffefa6bb9edb6db400581b4114040d2869a8a20907c02e7ce9d937af5ea9933b2aa56ad2abad990048174114040d2459a7a20902202797979327af46853fad0a143e5a5975e4a514d140b818b092020b40808848040b366cde4e8d1a3e69cacfcfc7c2957ae5c08bcc205d7092020ae4708fb2090008183070f4aab56adcc937ae8e2575f7d95402e1e8140e9082020a5e3476e083843e0b9e79e932fbffcd2d8b360c10269d9b2a533b6614838092020e18c2b5e4594407676b69c397346aa57af2e9b366d8a2805dc4e170104245da4a907026920909b9b2b63c68c317320fbf6ed4b438d54116502084894a38fefa12370fefc79c9caca327ead5ab54aead7af1f3a1f71c81d0208883bb1c012082485803dad57e744ecf2dea4144c211028460001a14940206404060c18204b962c1115123ba91e321771c7110208882381c00c08248bc0bc79f3cc66c21e3d7ac894295392552ce540e0120208088d0202212370e2c4095111d11b0b6bd5aa1532ef70c7250208884bd1c0160840000201228080042858980a010840c0250208884bd1c0160840000201228080042858980a010840c0250208884bd1c0160840000201228080042858980a010840c0250208884bd1c0160840000201228080042858980a010840c0250208884bd1c0160840000201228080042858980a010840c02502ff05db32d23061d933ff0000000049454e44ae426082	\\x89504e470d0a1a0a0000000d4948445200000190000000c80806000000c615b7e2000017cf49444154785eed9d0bb095d3fbc79fd2bda654e8265dc96542745122b70a6550224a85714988d0456e91482e3109698a29992e28e516522edda552b9a526914ca324a3a4f87996ff3aff77bf67ef73daebec7df6dafbfdac99e674ce79d7bb9ef579d6ecef59b7e729f1cfbf45281080000420008124099440409224c6e31080000420600820200c040840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a312042000010820208c010840000210702280803861a35254096cdebc596ebef96659bf7ebdecdab54baa56ad2a2b57ae8c2a0efa1d71020848c4074054bb3f72e448993b77ae6cdab449f6ecd923fbf7ef9712254a181cfaf5efbfffcefb3ec8c83e13e6f6cf3fff981fe9577da666cd9ab262c58aa8e2a5df1121808044c4d1b9d8cd8d1b37ca881123cc07f58e1d3be4afbffe321ffcfacf0a81fd6a3fe0833f2f0e26daae6d5b85a55ab56ab266cd9ae2689a36209076020848da11d34032049a366d2abffcf24b5e153b1b087ff0279a0924d3565054ecccc1d6b71ffc071d749054aa54490e3ffc70e9d0a1830c1a34285f1303060c90e9d3a7cbbe7dfbf2095741f6d8598ef6a57af5eab27af5ea64cce75908649c000292711760c0c9279f2c5bb66c314b3fc90a83fde00f8b81522d59b264de9252a952a5a462c58ad2b87163b9eebaeba473e7ce6907af7b25afbffe7accf2586133a0e0ec49ff5fa3460d59b56a55da6da50108b81040405ca851a7c804dab46923ba04154f348262a00dd9ef753650b66c59b30cd4ac593319376e5c91edc8c40b6ebcf146993d7b76523396201315963a75eac8679f7d9609f3691302ffbf42f0efc0fc6ff78f02813413183e7cb88c1d3bd60882ce0e6cb1cb45fab3d1a3474bb76eddd26c899fafefdbb7afcc9933c7ece504f914b6711fe4a8c2b27cf9723f3b88553947801948ceb9d4df0ed5aa552b9f70a8b52d5bb694993367fa6b78862debd3a78f7cf0c10766292c580a5aee0bff5da8c2b26cd9b20cf784e6738d0002926b1ef5b83f471c718459b689f7c117fcc0ab5fbfbe1194c30e3bcce3de64deb45ebd7ac9bc79f3f24e9d598b0e64c662f78ef470c0d2a54b33df192cc84a02084856ba2dbb8d1e356a948c1933c62cd524fad00b1e7fad5cb9b24c9e3c595ab46891dd1d2f26eb7bf6ec291f7ef861dede91158b648445457ce1c285c56431cd642b0104245b3d974376ebf2cc0d37dc20bffffebbe955611bebba91fee28b2f4abb76ed728842fabb72e9a597caa2458bcc5298dd870a1f5f0e5a11bcbf927eeb625bd0b6f5b040952a5564ddba75a2072828fe114040fcf30916fd4ba055ab56a261430a5a96b11f70bae1dcbd7b7779ecb1c760e740400f2d2c59b2246f4618bc91eff0ba9457090a9915be1f7ef821e5edf0c2e4092020c933a3460608f4eedddb6c24876f9987ff62b61f30a79c728a59f62a5fbe7c06accd8d26bb74e962f64774c6123c15561cbd0b86922968cf4c6dfbf9e79f8bc324da884300016158642581091326c8b061c364efdebd055e40b47fbdea86fcac59b3a45ebd7a59d9df281b7dfef9e79bcb94f14445fdab9750299921808064863bada6814093264dcc3e4aa2b5fbe0492f0d4f3265ca1469debc791a2ce195e926a07f08d83f1e109074d34efc7e042473ec6939cd04ce3cf34cf9e69b6f0a15141596d2a54bcb2db7dc2277dc71479aade2f510c81d020848eef8929e144260f0e0c13269d2a4b84b215a35bc59ab4b27e3c78f872b042090800002c2d0882c8177de79c71c1fb6f751e245e40dc239fae8a365c68c19261617050210f8f7c83db1b0180610f88fc0eeddbb4d58957038f9209fe00547cd46f8da6baf890a8b96db6fbf5d5e79e515d1902d043a64544581000212052fd3476702679f7db6b9c896e86e4470633e78dc547fae1bf5ba07438140ae12404072d5b3f42b2d041e7cf04179fef9e70bbc8f129eb1682e12dd4bd184541408e41201042497bc495f8a9dc0b66ddb442f2deaf2d78144c73dfef8e34dc87615150a04b29d000292ed1ec47e2f08d4ae5ddb08882e79ad5dbb36ef725ba2b85e76e94b2314eb3e8a865ba74020db082020d9e631ecf59240a3468d64cf9e3d2674cafaf5eb636cbcf2ca2b4d189644517183fb28152a5490a953a78aa6f9a540c077020888ef1ec2beac20d0a3470f993f7fbe1189826e46ab380c1830204f4ce2752e781fa55fbf7e72d75d776505038c8c1e0104247a3ea7c769226097a12eb8e00279eeb9e70a6da571e3c6f2c71f7f14b877a22fb10122efb9e71eb9fefaeb0b7d2f0f40a0b8082020c5459a76729ec059679d255f7ffdb5d920dfb469d301f7f7a4934e92ad5bb7e609899d81c45bf2b23f7bf3cd37e5c4134f3ce036781002e9208080a4832aef8c24816fbffd56ce38e30cd3f7a79f7e5aba76ed9a14878e1d3bcaead5abf3e58dd78df87080487ba151132d69f6c1238f3c32a9b6781802a9208080a48222ef80c0ff11d05be9bb76ed92ead5ab1b31702943860c91975e7ac954b547835530347fb9e6beb0a15782bfd367cb9429238b172f969a356bba344b1d08244d0001491a1915209098c0c48913e5eebbef360f680e8b430e39c419976eb86b74609b444b5fa442a2b1b8060e1c2843870e957dfbf6e59bb1e873e5ca953302a6b7e1291048170104245d64796f6409d4ad5bd77ce8eb51dc37de78a3c81c54082ebae822734c3838eb5091983973a639223c6ad4a8bc7682cfd8902a5f7df51579c58bec095e102680803026209062029a9ffde38f3f366ffdf1c71f53faf6a64d9b9a608f4191d07d10cd077fd96597995989ce826c093ea7ffd71991ce8c2810480501042415147907040204342ba26647d4a2e1e2f5f86daa8b9ef8d25945781f44c5eb89279e30cd5d75d555a221ebc3b7e1ed86bc5e7eb442976afb785f34082020d1f033bd2c6602ba7ca54773e3dd4c4fa5299a45f1d5575f8d79a52e9f1d7becb16669cb960b2fbc50962d5b66be0d470d564169d6ac99bcf5d65ba9348d7745800002120127d3c5e227f0fefbef4befdebd4dc3ba0f92eed02463c78e95112346c4645b5421295bb6acbcf0c20bd2be7dfb3c087ad4d886990f8b893ea4c121353e170502851140400a23c4ef21e048a0418306b277ef5ea95fbfbe7cfae9a78e6f49aeda279f7c221a7bebcf3fffcc37d3d0bb220b162c8879a10adb4f3ffd147766a23f54e1b1478a93b384a7a3400001898297e9634608dc79e79d3265ca14d3f6c68d1bcd3d8de22cad5ab592efbfff3e660f4497abf4a6fcc89123e5f2cb2f8f3147efb0ecdcb933dff3f6a12baeb8c26cd65320600920208c0508a491808d8fd5a9532719376e5c1a5b4afc6a4db33b68d0207367247cc457c3c92f59b224a6f2f6eddba5458b16f9729c04d3f96a404815484ab4092020d1f63fbd4f338173ce3947befcf24b7307436703992e6ddbb6950d1b361833c24781f5d262fffefd634cd4d0f4da075d8a0bd7d1ef4b962c299aa5514f7c51a2470001899ecfe9713112286a7cac7499aac118fbf6ed2bfbf7efcf6bc21eefd5bb22ba9752b972e598e6f567ba8c159cc9d8076cc4e0679f7d56341a31251a04109068f8995e6690c031c71c23bffdf69b54ad5a55d6ac5993414be237ad411cbff8e28b9819869d6d5c7df5d5f2c0030fe4aba8a7b4f408b10db3125e1ad319d7b469d3a44d9b36def5178352470001491d4bde0481b80482f1b1962e5dea6dfada850b178a26c60a9ee0b2b3129d8de8d1640de8182e1a79f8d1471f35b399e0a5455b5743ae68dd860d1b3242728c000292630ea53b7e12b0f1b13487872e1ff95ef484d6471f7d149339d1e622b9f8e28b65cc983171bba0b7eec78f1f9fb7bf12be29af297b35b6977ea5643f010424fb7d480fb280804d79aba6a63a3e563abbbf72e54ae9d2a54b4c20476d4fc5444560c68c1909135b5d73cd35e6767bbc502a5a5f67359a808b92bd041090ecf51d96671181607c2c4d4b7befbdf76691f5ff997aedb5d71a41b033112b24fabdde6ed7e3c2898a4613d6e3c2f1c4447f76e8a1878a8a1525bb082020d9e52faccd62027ab762cb962d2657c777df7d97b53d51db75e35df3b96b092e53e96549bd3c59d0e67961a154e2dd98cf5a58396e380292e30ea67bfe10d063b01a725d4baee434d7cb842fbffc723e21d1594938a0633c4f84f3c1db67eca5c5e6cd9bcbecd9b3fd712296c41040401810102846027a12494f39e907672e7d30ea129d7ed8eb71e57080c6d2a54b9b1028ddba754b485a2f2aea01835f7ffd35468cec32997e3df5d45365faf4e9c5e82d9a2a8c00025218217e0f811412183e7cb8e8653b2d3e1fe92d4a97f524d6840913e2ee95c40b9d126e4b45440576f7eedd09e372e9c67ea2936045b19dbac911404092e3c5d3102832013b0b69ddbab539c594ab456723ba176233288643a7e84102dd982fa8e805c7ce9d3b9b502af1ee98685d0d9bfff0c30fe72a46affb858078ed1e8ccb45024f3ef9645e54db5c9d8584fdf6d4534f99bced7a733d7c37444f606966c470e894f03b3441569f3e7df2c2af846fbfebf303070e94db6ebb2d17878d977d4240bc740b46e53a81a8cc42c27ed4fd1f9d95847390d8585a8942a784dfa37b21b7de7aab5926d31216250df2f8c8238f48cf9e3d737d2865b47f084846f1d378540944711612f6b5664abcfffefbf3ed95e87355aa543137e175765258d199cde8d1a3f38989d6b3c2a47b321d3a7428ec55fc3e4902084892c0781c02a92210d559483c7e9a4677d3a64d71f73992d9301f3c78b04c9a34c93411efc2a306799c356b56da530ca76a8cf8fe1e04c4770f615fce12d0bf9af5af67fda05bb46891d4ab572f67fb7aa01d8b97fcca8a41c58a1545f741f424d78114dd2f79f7dd77cda3baa4658bbd6352be7c79733bfe40663907d25e149f4140a2e875faec0d81c68d1b9be3aa2a1e73e6cc916ad5aa79635ba60d39fdf4d345135a6909ef71b46bd7aec0d02961dbcf3bef3c132a255e28157d56c54943ed972d5b36d3ddceaaf61190ac7217c6e61a01cd56a8d9fc366fde2c9a3744f36c14761a29d71814d61f9bfc2a9cc84a6712fa81af37e193c93ba2cb65363b64f8d223411e0bf346ecef1190e478f13404524e60c78e1dd2bd7b77f317f009279c60021652e21338f7dc734d38f878b392e38e3b4ede7befbda4d029ef6ddbb6c5bc4fbfb1a7bb6ad4a8219f7ffe7952ef8cd2c3084894bc4d5fbd25b06bd72ee9d5ab9709b2182f9dacb78667c8b078c9afec077fa952a5e4f1c71f2f30744ad8ec3d7bf698502a7af931284e413139eaa8a364fefcf919eab19fcd22207efa05ab224a60fbf6edec8324e97b9dbd2d58b020eefe86ee2de9018564cad6ad5ba56ddbb6f9a20d5b31d1d949ab56ad64e6cc99c9bc36279f454072d2ad740a02d1239028f9959d51dc77df7d85864e09535bbe7cb974edda355f28157dcee683d7cdfea953a7460ff8bf3d464022e9763a0d81dc269028f995f65af735162f5e9cf489ab79f3e69965462b1ce19361fa6e8d38ac615ba2521090a8789a7e422082040a4a7ea538341c8ac6cf4ab64c9e3c59060d1a9430948abe4f4fd73df4d043c9be3aab9e4740b2ca5d180b0108b8124894fc4adf57b56a55b341ee72a970e4c89131b38e78411e870e1d2a37dd7493abe9ded64340bc750d86410002e920a0c77675df62e7ce9de6f5e1a5a81e3d7a9808012e456734d3a64d8b79af7e638f05eb8d783d21663353bab4e1531d04c4276f600b042050ac04342789065a8c1766be52a54ae6a495a6e675292a44898efdda208fba14a639e2b3b52020d9ea39ec86000452462051f22b3b7be8d8b1a34c9c38d1b9bdf6eddbcbba75eb62023cda77ab986890c7b7df7e5b9a366deadc46262a222099a04e9b108080b704e225bfb21ff665ca94912953a624153a25dcd1962d5b9ad03589e272952b57ce24d8aa53a78eb78cac610888f72ec24008402013040a4a7ea5f66818149d3514a5e88c4353fe6a09c7e5d29f6990470ddda291837d2c08888f5ec1260840c02b02cf3cf38c8c183122ee1254e9d2a565ecd8b1d2a953a722d9dca44913134a25decc4497b9ead6ad2b9a02d9a78280f8e40d6c810004bc27d0ba75ebbc68bed6589b63a451a346269659518bbe47c3fc8767261a7d78c3860d457d7dcaea23202943c98b20008128112828f9951ed71d326488f4ebd7afc8481a346820ba9c6697b8748f442f48fa5010101fbc800d108040561338edb4d3f23ed4c3f74a6ad5aa251a3db8a8c9aa829bea7af151c3ff67ba202099f600ed4300023943c026bfdabf7f7f4c9f6c7ef6fefdfb3b854eb12f0b8a88c6f45ab1624546d9212019c54fe3108040ae1228288deec1071f6cee85b894dab56b9be52c15a54c27bc42405c3c481d084000020748a0a0e4572a04975c72c90145f0d5535eab56adca776b7ecb962d076849ea1f434052cf943742000210884b40c542135cd9252dfb907e5fa1420559bf7e7d5e3d7d56c3ce87c3c7eb0336b696665fb4f9dd33811c01c90475da840004224fa061c386e6a8ae9ed80a0a89fd7ff06261503474037deddab55ef04340bc7003464000025125a07943e6ce9d1b7756a24cf4a2629f3e7d64d8b061de214240bc7309064100025125a0b312bdf3a11be5cb962df31e0302e2bd8b3010021080809f0410103ffd825510800004bc27808078ef220c84000420e0270104c44fbf601504200001ef092020debb080321000108f8490001f1d32f5805010840c07b020888f72ec240084000027e124040fcf40b5641000210f09e0002e2bd8b3010021080809f0410103ffd825510800004bc27808078ef220c84000420e0270104c44fbf601504200001ef092020debb080321000108f8490001f1d32f5805010840c07b020888f72ec240084000027e124040fcf40b5641000210f09e0002e2bd8b3010021080809f0410103ffd825510800004bc27808078ef220c84000420e0270104c44fbf601504200001ef092020debb080321000108f8490001f1d32f5805010840c07b020888f72ec240084000027e124040fcf40b5641000210f09e0002e2bd8b3010021080809f0410103ffd825510800004bc27808078ef220c84000420e0270104c44fbf601504200001ef092020debb080321000108f8490001f1d32f5805010840c07b020888f72ec240084000027e124040fcf40b5641000210f09e0002e2bd8b3010021080809f0410103ffd825510800004bc27808078ef220c84000420e0270104c44fbf601504200001ef092020debb080321000108f8490001f1d32f5805010840c07b020888f72ec240084000027e124040fcf40b5641000210f09e0002e2bd8b3010021080809f04fe07f45e953f142de8730000000049454e44ae426082	2026-04-13 12:03:09.043002+00	2026-04-13 13:10:27.975336+00	\N	1c2411aa-1f09-4c5d-8360-96180f6b4c54	ef6fb6ab-1b1a-41ea-bf5a-658502d156f7	t
+777b09a3-e9bf-42bb-9187-bc037bf8af6e	2026-06-15	\N	\N	{"colis_frg": 0, "colis_std": 0, "sachets_frg": 0, "sachets_std": 0}	\N	\N	2026-06-15 16:20:36.882739+00	2026-06-15 16:20:36.882739+00	\N	1c2411aa-1f09-4c5d-8360-96180f6b4c54	\N	f
+5afebd2a-5d57-469b-8dc1-1aaa3a437189	2026-06-15	\N	\N	{"colis_frg": 0, "colis_std": 0, "sachets_frg": 0, "sachets_std": 0}	\\x89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da6364f8cf500f00038601805a347d6b0000000049454e44ae426082	\\x89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da6364f8cf500f00038601805a347d6b0000000049454e44ae426082	2026-06-15 15:50:26.736619+00	2026-06-15 16:29:07.330988+00	\N	0450c96e-c43b-47f9-bdd3-08e5a62b1ae7	ef6fb6ab-1b1a-41ea-bf5a-658502d156f7	t
 \.
 
 
@@ -1083,45 +1886,93 @@ f969c5ec-cc7e-4f7f-a504-a5a893c143f3	2026-04-13	\N	\N	{"colis_frg": 0, "colis_st
 -- Data for Name: lignes_commande; Type: TABLE DATA; Schema: public; Owner: dimed
 --
 
-COPY public.lignes_commande (id, commande_id, medicament_id, designation, qte_demandee, prix_unitaire, n_lot, created_at, updated_at, created_by, qte_prelevee, verifie, remise_pct, ocr_verifie) FROM stdin;
-efe513cc-eae7-494e-8d03-8c64a0873620	f513fe06-a0cf-44fa-838f-5453e98790b5	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	L0001-26	2026-04-13 13:36:09.730856+00	2026-04-13 20:16:58.172148+00	\N	2	t	0.00	t
-d3c49026-4013-489f-a38a-4449cbee15cd	02d29f6f-7320-46de-9910-18a4a137f9fc	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	5	198.50	L0001-26	2026-03-26 12:27:45.079296+00	2026-03-26 12:27:45.079296+00	\N	\N	f	0.00	f
-24a9669a-4617-4ea8-aa40-093540123489	96fdb118-00e1-4720-b8f9-2f3b30e58611	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	4	198.50	L0001-26	2026-04-13 10:11:11.642963+00	2026-04-13 12:16:36.343232+00	\N	4	t	0.00	f
-b2ee230b-9def-49b7-a218-34e15dd7e7b4	19dd4b84-c4cb-4603-a8bb-5a9a1aa356b6	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	L0001-26	2026-04-13 11:36:57.533086+00	2026-04-13 11:57:36.592188+00	\N	1	t	0.00	f
-0c7e9412-7c38-4a48-9c2f-a12be4950c66	8749fa09-b997-45a6-b5be-e9b1f49c23d2	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	L0001-26	2026-03-26 11:04:39.866189+00	2026-03-26 11:04:39.866189+00	\N	\N	f	0.00	f
-dbd086e4-3616-4600-9d2d-3455f9854acc	0bff5c32-f6f8-4986-92ea-b6a8147cba6a	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	L0001-26	2026-03-26 11:15:16.104921+00	2026-03-26 11:15:16.104921+00	\N	\N	f	0.00	f
-3c301701-ce0c-4dde-b616-1bcf9476ca17	fc503d8a-06ee-4c1b-a604-7c0cfc2cbb07	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	L0001-26	2026-04-07 11:48:01.080345+00	2026-04-07 11:48:01.080345+00	\N	\N	f	0.00	f
-928178ad-2374-419a-96de-0c2762b8b95d	870c4e4e-0ac5-47e6-9ad5-ad018343b8cd	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	4	198.50	L0001-26	2026-04-13 12:26:13.735977+00	2026-04-13 12:32:21.725392+00	\N	4	t	0.00	t
-40eecbb5-12eb-4c3c-a11f-b229ac64f6c2	506905ec-c6d4-4c53-896e-3732e50f183b	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	L0001-26	2026-03-26 12:22:32.284605+00	2026-03-26 12:22:32.284605+00	\N	\N	f	0.00	f
-42774df1-877b-468e-a7a7-18a226d71e63	9bf827a6-b240-4200-a206-40f132b84460	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	L0001-26	2026-04-01 15:58:51.958055+00	2026-04-01 15:58:51.958055+00	\N	\N	f	0.00	f
-648eb1fb-1340-4544-8b0a-4277571ecc78	6082713a-d865-4e27-8a42-5bfedaa5c38d	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	5	198.50	L0001-26	2026-03-26 11:04:24.277773+00	2026-03-26 11:04:24.277773+00	\N	\N	f	0.00	f
-4449c85f-cabb-4600-9670-79338b497c55	dbbca1b4-1782-4fd5-9255-9e458cdbd550	2022fa77-0632-475d-8ff3-40ebb1869f4a	DOLIPRANE. 1000MG B/8 COMP	1	100.11	L0072-26	2026-04-01 13:40:17.726588+00	2026-04-01 13:51:55.338346+00	\N	1	t	0.00	f
-7de8a0c4-4300-4c44-ab5b-1af712b686f6	f61d715f-0444-45bc-b848-927210e1a0b9	2022fa77-0632-475d-8ff3-40ebb1869f4a	DOLIPRANE. 1000MG B/8 COMP	1	100.11	L0072-26	2026-03-30 17:58:54.571366+00	2026-04-01 13:31:17.247379+00	\N	1	t	0.00	f
-ba742d17-fc37-4dcf-bc42-c7b66eefc92c	106039b7-a430-4ce3-ae3a-e85ecdc1efa5	2022fa77-0632-475d-8ff3-40ebb1869f4a	DOLIPRANE. 1000MG B/8 COMP	2	100.11	L0072-26	2026-04-01 15:52:14.19294+00	2026-04-01 16:08:29.240516+00	\N	2	t	0.00	f
-925c988b-d4ea-4fee-a629-4c4c807a5b70	506905ec-c6d4-4c53-896e-3732e50f183b	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	L0002-26	2026-03-26 12:22:32.284605+00	2026-03-26 12:22:32.284605+00	\N	\N	f	0.00	f
-adb88674-e1b5-40a2-8e3a-a3b20a829524	48615e40-3d72-40e0-924d-fa4ea9ae3604	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	3	455.58	L0002-26	2026-04-13 13:36:13.593355+00	2026-04-13 13:40:33.451234+00	\N	3	t	0.00	t
-f5df1af1-0fb5-4a1c-9a92-aea12585a54a	39c1dfe9-f87e-48b9-82f9-585965bef503	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	L0002-26	2026-03-26 11:29:21.70522+00	2026-03-26 11:29:21.70522+00	\N	\N	f	0.00	f
-766e821a-2c9d-4dcf-a06b-f24231001170	870c4e4e-0ac5-47e6-9ad5-ad018343b8cd	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	4	455.58	L0002-26	2026-04-13 12:26:13.735977+00	2026-04-13 13:06:22.049945+00	\N	4	t	0.00	t
-9d62371b-49bb-482c-afc5-9d307d5c0eb9	3f80e2e0-8be4-44f0-981e-95810dc3d429	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	3	455.58	L0002-26	2026-04-01 15:59:03.371038+00	2026-04-01 16:07:58.233106+00	\N	3	t	0.00	f
-32227cd1-4816-4294-b5a3-1b87db43927e	02d29f6f-7320-46de-9910-18a4a137f9fc	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	L0002-26	2026-03-26 12:27:45.079296+00	2026-03-26 12:27:45.079296+00	\N	\N	f	0.00	f
-14d5f54e-ee77-40ed-b820-a49120fc9088	2c2e82ab-d610-4c51-9d96-3975c65d03db	5e57f1e4-b43f-45ba-aadc-c6d1b7533292	ASPEC. 100MG B/98 COMP. SEC	4	259.70	L0008-26	2026-04-13 13:36:22.779086+00	2026-04-13 13:38:49.823483+00	\N	4	t	0.00	t
-60766ac0-3aec-448c-9656-b2ae56626d89	39c1dfe9-f87e-48b9-82f9-585965bef503	72dcd068-d94c-4c76-9dca-3ddace1e5962	APROVASC 150MG/5MG  B/30 COMP. PELLI	3	1497.50	L0003-26	2026-03-26 11:29:21.70522+00	2026-03-26 11:29:21.70522+00	\N	\N	f	0.00	f
-5011d0c0-95e6-4d53-ac14-061e87b65dfe	506905ec-c6d4-4c53-896e-3732e50f183b	72dcd068-d94c-4c76-9dca-3ddace1e5962	APROVASC 150MG/5MG  B/30 COMP. PELLI	1	1497.50	L0003-26	2026-03-26 12:22:32.284605+00	2026-03-26 12:22:32.284605+00	\N	\N	f	0.00	f
-69c98964-6bb7-416e-b786-22dc6db35e79	6082713a-d865-4e27-8a42-5bfedaa5c38d	72dcd068-d94c-4c76-9dca-3ddace1e5962	APROVASC 150MG/5MG  B/30 COMP. PELLI	1	1497.50	L0003-26	2026-03-26 11:04:24.277773+00	2026-03-26 11:04:24.277773+00	\N	\N	f	0.00	f
-61ea4cf4-92d8-458a-a4cf-83abc64e99ef	be9e9a4e-ca96-4d21-ba90-b920221f2efc	72dcd068-d94c-4c76-9dca-3ddace1e5962	APROVASC 150MG/5MG  B/30 COMP. PELLI	4	1497.50	L0003-26	2026-04-13 13:36:37.303887+00	2026-04-13 13:36:37.303887+00	\N	\N	f	0.00	f
-066d7516-e62f-45c8-ad25-6b4553492b7a	17c3ce0d-4a8e-4b70-8872-30d5b906bfe7	7435046b-fc3b-4c8e-9041-9c1e886aa102	APROVEL. 150MG B/28 COMP. PELLI	3	1201.50	L0005-26	2026-04-13 12:22:03.897684+00	2026-04-13 12:33:02.433328+00	\N	3	t	0.00	t
-d3915e19-fa90-4cfa-aae5-4c3dd2b4656c	6082713a-d865-4e27-8a42-5bfedaa5c38d	7435046b-fc3b-4c8e-9041-9c1e886aa102	APROVEL. 150MG B/28 COMP. PELLI	1	1201.50	L0005-26	2026-03-26 11:04:24.277773+00	2026-03-26 11:04:24.277773+00	\N	\N	f	0.00	f
-96085a31-fae0-433c-a940-f8b409db7675	870c4e4e-0ac5-47e6-9ad5-ad018343b8cd	7435046b-fc3b-4c8e-9041-9c1e886aa102	APROVEL. 150MG B/28 COMP. PELLI	2	1201.50	L0005-26	2026-04-13 12:26:13.735977+00	2026-04-13 13:06:23.691267+00	\N	2	t	0.00	t
-d64022fc-da5e-4cb7-9039-f87aedc26fc4	f61d715f-0444-45bc-b848-927210e1a0b9	7ef1546e-cce2-4f28-a931-bf8d45a40cf6	DOLIPRANE. 500MG B/16 COMP	1	100.04	L0077-26	2026-03-30 17:58:54.571366+00	2026-04-01 13:31:18.521771+00	\N	1	t	0.00	f
-a051e1ec-b013-4f00-998d-2916462efcbd	106039b7-a430-4ce3-ae3a-e85ecdc1efa5	ebaf3ac2-f1e4-4790-a80e-2f4a23f49a69	BANDELETTES ON CALL  EXTRA -1 TEST B/50	1	1500.00	L0015-26	2026-04-01 15:52:14.19294+00	2026-04-01 16:08:27.947427+00	\N	1	t	0.00	f
-c3c874a3-436e-493a-8c80-ce1c3405939b	dbbca1b4-1782-4fd5-9255-9e458cdbd550	ebaf3ac2-f1e4-4790-a80e-2f4a23f49a69	BANDELETTES ON CALL  EXTRA -1 TEST B/50	1	1500.00	L0015-26	2026-04-01 13:40:17.726588+00	2026-04-01 13:51:54.090058+00	\N	1	t	0.00	f
-c0801d80-246d-4722-a678-2928a0a48676	39c1dfe9-f87e-48b9-82f9-585965bef503	ec9ea5cf-4731-4d28-b580-f45b357b1aa2	APROVASC 300MG/10MG B/30 COMP. PELLI.SEC	1	1497.50	L0004-26	2026-03-26 11:29:21.70522+00	2026-03-26 11:29:21.70522+00	\N	\N	f	0.00	f
-bf6c5dc4-6d96-4c7f-ad2a-eb77d4fef2f6	6e7ffbab-0205-4987-b782-0f9dfae7d304	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	\N	2026-04-13 20:11:54.635136+00	2026-04-13 20:15:41.867116+00	\N	1	t	0.00	t
-2e2814a3-d91c-4559-95ca-c50b0181bf8c	6e7ffbab-0205-4987-b782-0f9dfae7d304	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-04-13 20:11:54.635136+00	2026-04-13 20:15:46.217308+00	\N	2	t	0.00	t
-3dddd6ce-bd8a-40c0-8446-de4f4fcdc4b2	7a976530-4b36-4705-8bf7-ce1168928a19	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-04-13 20:20:12.673589+00	2026-04-13 20:20:12.673589+00	\N	\N	f	0.00	f
-78aa0c58-eb76-436d-9e5a-52f6ec554db9	81b6516c-629b-4d80-82d5-24a7801ae726	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	2	455.58	\N	2026-04-13 20:20:19.723784+00	2026-04-13 20:20:19.723784+00	\N	\N	f	0.00	f
-3544cf1b-52a8-4436-9ed7-ec64a9fda282	18a1fd87-3e0b-477f-a337-39709652df94	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-04-13 20:20:29.891498+00	2026-04-13 20:21:54.781807+00	\N	2	t	0.00	t
-4af15eb0-92e6-47c4-88a4-b6358c755023	9eac02e4-6c72-4e43-8eab-9a03d0b97c26	2022fa77-0632-475d-8ff3-40ebb1869f4a	DOLIPRANE. 1000MG B/8 COMP	2	100.11	\N	2026-04-14 22:04:13.281688+00	2026-04-14 22:04:13.281688+00	\N	\N	f	0.00	f
+COPY public.lignes_commande (id, commande_id, medicament_id, designation, qte_demandee, prix_unitaire, n_lot, created_at, updated_at, created_by, qte_prelevee, verifie, remise_pct, fab, exp, ppa) FROM stdin;
+efe513cc-eae7-494e-8d03-8c64a0873620	f513fe06-a0cf-44fa-838f-5453e98790b5	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	L0001-26	2026-04-13 13:36:09.730856+00	2026-04-13 20:16:58.172148+00	\N	2	t	0.00	\N	\N	\N
+d3c49026-4013-489f-a38a-4449cbee15cd	02d29f6f-7320-46de-9910-18a4a137f9fc	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	5	198.50	L0001-26	2026-03-26 12:27:45.079296+00	2026-03-26 12:27:45.079296+00	\N	\N	f	0.00	\N	\N	\N
+24a9669a-4617-4ea8-aa40-093540123489	96fdb118-00e1-4720-b8f9-2f3b30e58611	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	4	198.50	L0001-26	2026-04-13 10:11:11.642963+00	2026-04-13 12:16:36.343232+00	\N	4	t	0.00	\N	\N	\N
+b2ee230b-9def-49b7-a218-34e15dd7e7b4	19dd4b84-c4cb-4603-a8bb-5a9a1aa356b6	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	L0001-26	2026-04-13 11:36:57.533086+00	2026-04-13 11:57:36.592188+00	\N	1	t	0.00	\N	\N	\N
+0c7e9412-7c38-4a48-9c2f-a12be4950c66	8749fa09-b997-45a6-b5be-e9b1f49c23d2	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	L0001-26	2026-03-26 11:04:39.866189+00	2026-03-26 11:04:39.866189+00	\N	\N	f	0.00	\N	\N	\N
+dbd086e4-3616-4600-9d2d-3455f9854acc	0bff5c32-f6f8-4986-92ea-b6a8147cba6a	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	L0001-26	2026-03-26 11:15:16.104921+00	2026-03-26 11:15:16.104921+00	\N	\N	f	0.00	\N	\N	\N
+3c301701-ce0c-4dde-b616-1bcf9476ca17	fc503d8a-06ee-4c1b-a604-7c0cfc2cbb07	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	L0001-26	2026-04-07 11:48:01.080345+00	2026-04-07 11:48:01.080345+00	\N	\N	f	0.00	\N	\N	\N
+928178ad-2374-419a-96de-0c2762b8b95d	870c4e4e-0ac5-47e6-9ad5-ad018343b8cd	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	4	198.50	L0001-26	2026-04-13 12:26:13.735977+00	2026-04-13 12:32:21.725392+00	\N	4	t	0.00	\N	\N	\N
+40eecbb5-12eb-4c3c-a11f-b229ac64f6c2	506905ec-c6d4-4c53-896e-3732e50f183b	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	L0001-26	2026-03-26 12:22:32.284605+00	2026-03-26 12:22:32.284605+00	\N	\N	f	0.00	\N	\N	\N
+42774df1-877b-468e-a7a7-18a226d71e63	9bf827a6-b240-4200-a206-40f132b84460	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	L0001-26	2026-04-01 15:58:51.958055+00	2026-04-01 15:58:51.958055+00	\N	\N	f	0.00	\N	\N	\N
+648eb1fb-1340-4544-8b0a-4277571ecc78	6082713a-d865-4e27-8a42-5bfedaa5c38d	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	5	198.50	L0001-26	2026-03-26 11:04:24.277773+00	2026-03-26 11:04:24.277773+00	\N	\N	f	0.00	\N	\N	\N
+4449c85f-cabb-4600-9670-79338b497c55	dbbca1b4-1782-4fd5-9255-9e458cdbd550	2022fa77-0632-475d-8ff3-40ebb1869f4a	DOLIPRANE. 1000MG B/8 COMP	1	100.11	L0072-26	2026-04-01 13:40:17.726588+00	2026-04-01 13:51:55.338346+00	\N	1	t	0.00	\N	\N	\N
+7de8a0c4-4300-4c44-ab5b-1af712b686f6	f61d715f-0444-45bc-b848-927210e1a0b9	2022fa77-0632-475d-8ff3-40ebb1869f4a	DOLIPRANE. 1000MG B/8 COMP	1	100.11	L0072-26	2026-03-30 17:58:54.571366+00	2026-04-01 13:31:17.247379+00	\N	1	t	0.00	\N	\N	\N
+ba742d17-fc37-4dcf-bc42-c7b66eefc92c	106039b7-a430-4ce3-ae3a-e85ecdc1efa5	2022fa77-0632-475d-8ff3-40ebb1869f4a	DOLIPRANE. 1000MG B/8 COMP	2	100.11	L0072-26	2026-04-01 15:52:14.19294+00	2026-04-01 16:08:29.240516+00	\N	2	t	0.00	\N	\N	\N
+925c988b-d4ea-4fee-a629-4c4c807a5b70	506905ec-c6d4-4c53-896e-3732e50f183b	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	L0002-26	2026-03-26 12:22:32.284605+00	2026-03-26 12:22:32.284605+00	\N	\N	f	0.00	\N	\N	\N
+adb88674-e1b5-40a2-8e3a-a3b20a829524	48615e40-3d72-40e0-924d-fa4ea9ae3604	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	3	455.58	L0002-26	2026-04-13 13:36:13.593355+00	2026-04-13 13:40:33.451234+00	\N	3	t	0.00	\N	\N	\N
+f5df1af1-0fb5-4a1c-9a92-aea12585a54a	39c1dfe9-f87e-48b9-82f9-585965bef503	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	L0002-26	2026-03-26 11:29:21.70522+00	2026-03-26 11:29:21.70522+00	\N	\N	f	0.00	\N	\N	\N
+766e821a-2c9d-4dcf-a06b-f24231001170	870c4e4e-0ac5-47e6-9ad5-ad018343b8cd	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	4	455.58	L0002-26	2026-04-13 12:26:13.735977+00	2026-04-13 13:06:22.049945+00	\N	4	t	0.00	\N	\N	\N
+9d62371b-49bb-482c-afc5-9d307d5c0eb9	3f80e2e0-8be4-44f0-981e-95810dc3d429	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	3	455.58	L0002-26	2026-04-01 15:59:03.371038+00	2026-04-01 16:07:58.233106+00	\N	3	t	0.00	\N	\N	\N
+32227cd1-4816-4294-b5a3-1b87db43927e	02d29f6f-7320-46de-9910-18a4a137f9fc	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	L0002-26	2026-03-26 12:27:45.079296+00	2026-03-26 12:27:45.079296+00	\N	\N	f	0.00	\N	\N	\N
+14d5f54e-ee77-40ed-b820-a49120fc9088	2c2e82ab-d610-4c51-9d96-3975c65d03db	5e57f1e4-b43f-45ba-aadc-c6d1b7533292	ASPEC. 100MG B/98 COMP. SEC	4	259.70	L0008-26	2026-04-13 13:36:22.779086+00	2026-04-13 13:38:49.823483+00	\N	4	t	0.00	\N	\N	\N
+60766ac0-3aec-448c-9656-b2ae56626d89	39c1dfe9-f87e-48b9-82f9-585965bef503	72dcd068-d94c-4c76-9dca-3ddace1e5962	APROVASC 150MG/5MG  B/30 COMP. PELLI	3	1497.50	L0003-26	2026-03-26 11:29:21.70522+00	2026-03-26 11:29:21.70522+00	\N	\N	f	0.00	\N	\N	\N
+5011d0c0-95e6-4d53-ac14-061e87b65dfe	506905ec-c6d4-4c53-896e-3732e50f183b	72dcd068-d94c-4c76-9dca-3ddace1e5962	APROVASC 150MG/5MG  B/30 COMP. PELLI	1	1497.50	L0003-26	2026-03-26 12:22:32.284605+00	2026-03-26 12:22:32.284605+00	\N	\N	f	0.00	\N	\N	\N
+69c98964-6bb7-416e-b786-22dc6db35e79	6082713a-d865-4e27-8a42-5bfedaa5c38d	72dcd068-d94c-4c76-9dca-3ddace1e5962	APROVASC 150MG/5MG  B/30 COMP. PELLI	1	1497.50	L0003-26	2026-03-26 11:04:24.277773+00	2026-03-26 11:04:24.277773+00	\N	\N	f	0.00	\N	\N	\N
+61ea4cf4-92d8-458a-a4cf-83abc64e99ef	be9e9a4e-ca96-4d21-ba90-b920221f2efc	72dcd068-d94c-4c76-9dca-3ddace1e5962	APROVASC 150MG/5MG  B/30 COMP. PELLI	4	1497.50	L0003-26	2026-04-13 13:36:37.303887+00	2026-04-13 13:36:37.303887+00	\N	\N	f	0.00	\N	\N	\N
+066d7516-e62f-45c8-ad25-6b4553492b7a	17c3ce0d-4a8e-4b70-8872-30d5b906bfe7	7435046b-fc3b-4c8e-9041-9c1e886aa102	APROVEL. 150MG B/28 COMP. PELLI	3	1201.50	L0005-26	2026-04-13 12:22:03.897684+00	2026-04-13 12:33:02.433328+00	\N	3	t	0.00	\N	\N	\N
+d3915e19-fa90-4cfa-aae5-4c3dd2b4656c	6082713a-d865-4e27-8a42-5bfedaa5c38d	7435046b-fc3b-4c8e-9041-9c1e886aa102	APROVEL. 150MG B/28 COMP. PELLI	1	1201.50	L0005-26	2026-03-26 11:04:24.277773+00	2026-03-26 11:04:24.277773+00	\N	\N	f	0.00	\N	\N	\N
+96085a31-fae0-433c-a940-f8b409db7675	870c4e4e-0ac5-47e6-9ad5-ad018343b8cd	7435046b-fc3b-4c8e-9041-9c1e886aa102	APROVEL. 150MG B/28 COMP. PELLI	2	1201.50	L0005-26	2026-04-13 12:26:13.735977+00	2026-04-13 13:06:23.691267+00	\N	2	t	0.00	\N	\N	\N
+d64022fc-da5e-4cb7-9039-f87aedc26fc4	f61d715f-0444-45bc-b848-927210e1a0b9	7ef1546e-cce2-4f28-a931-bf8d45a40cf6	DOLIPRANE. 500MG B/16 COMP	1	100.04	L0077-26	2026-03-30 17:58:54.571366+00	2026-04-01 13:31:18.521771+00	\N	1	t	0.00	\N	\N	\N
+a051e1ec-b013-4f00-998d-2916462efcbd	106039b7-a430-4ce3-ae3a-e85ecdc1efa5	ebaf3ac2-f1e4-4790-a80e-2f4a23f49a69	BANDELETTES ON CALL  EXTRA -1 TEST B/50	1	1500.00	L0015-26	2026-04-01 15:52:14.19294+00	2026-04-01 16:08:27.947427+00	\N	1	t	0.00	\N	\N	\N
+c3c874a3-436e-493a-8c80-ce1c3405939b	dbbca1b4-1782-4fd5-9255-9e458cdbd550	ebaf3ac2-f1e4-4790-a80e-2f4a23f49a69	BANDELETTES ON CALL  EXTRA -1 TEST B/50	1	1500.00	L0015-26	2026-04-01 13:40:17.726588+00	2026-04-01 13:51:54.090058+00	\N	1	t	0.00	\N	\N	\N
+c0801d80-246d-4722-a678-2928a0a48676	39c1dfe9-f87e-48b9-82f9-585965bef503	ec9ea5cf-4731-4d28-b580-f45b357b1aa2	APROVASC 300MG/10MG B/30 COMP. PELLI.SEC	1	1497.50	L0004-26	2026-03-26 11:29:21.70522+00	2026-03-26 11:29:21.70522+00	\N	\N	f	0.00	\N	\N	\N
+bf6c5dc4-6d96-4c7f-ad2a-eb77d4fef2f6	6e7ffbab-0205-4987-b782-0f9dfae7d304	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	\N	2026-04-13 20:11:54.635136+00	2026-04-13 20:15:41.867116+00	\N	1	t	0.00	\N	\N	\N
+2e2814a3-d91c-4559-95ca-c50b0181bf8c	6e7ffbab-0205-4987-b782-0f9dfae7d304	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-04-13 20:11:54.635136+00	2026-04-13 20:15:46.217308+00	\N	2	t	0.00	\N	\N	\N
+3dddd6ce-bd8a-40c0-8446-de4f4fcdc4b2	7a976530-4b36-4705-8bf7-ce1168928a19	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-04-13 20:20:12.673589+00	2026-04-13 20:20:12.673589+00	\N	\N	f	0.00	\N	\N	\N
+78aa0c58-eb76-436d-9e5a-52f6ec554db9	81b6516c-629b-4d80-82d5-24a7801ae726	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	2	455.58	\N	2026-04-13 20:20:19.723784+00	2026-04-13 20:20:19.723784+00	\N	\N	f	0.00	\N	\N	\N
+3544cf1b-52a8-4436-9ed7-ec64a9fda282	18a1fd87-3e0b-477f-a337-39709652df94	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-04-13 20:20:29.891498+00	2026-04-13 20:21:54.781807+00	\N	2	t	0.00	\N	\N	\N
+4af15eb0-92e6-47c4-88a4-b6358c755023	9eac02e4-6c72-4e43-8eab-9a03d0b97c26	2022fa77-0632-475d-8ff3-40ebb1869f4a	DOLIPRANE. 1000MG B/8 COMP	2	100.11	\N	2026-04-14 22:04:13.281688+00	2026-04-14 22:04:13.281688+00	\N	\N	f	0.00	\N	\N	\N
+e8863803-cf96-486b-b12b-ff36734d10db	7646e2c0-c917-471f-98a8-29c2fc69479b	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-06-15 15:50:25.373796+00	2026-06-15 15:50:26.252872+00	\N	2	t	0.00	\N	\N	\N
+67571d1f-8d3b-48b3-b22b-95141657a2ef	7646e2c0-c917-471f-98a8-29c2fc69479b	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	\N	2026-06-15 15:50:25.373796+00	2026-06-15 15:50:26.283267+00	\N	1	t	0.00	\N	\N	\N
+3995f748-e345-4056-8ea9-426e0511a6c2	e7b4011b-5ed7-4f24-9ad2-2a04312b074e	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-06-15 15:50:29.721159+00	2026-06-15 15:50:29.721159+00	\N	\N	f	0.00	\N	\N	\N
+462c6f24-d437-4327-bfea-f2817d42b25f	28b1f7b8-fe5e-45df-8bb4-c41ac4843a4c	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	5	198.50	\N	2026-06-15 15:50:31.065853+00	2026-06-15 15:50:31.096699+00	\N	\N	f	0.00	\N	\N	\N
+ed20ed63-8b72-446a-a420-87369615e8b5	74e329cd-12fa-4a22-ac80-9c24b5d0e375	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 15:50:32.488775+00	2026-06-15 15:50:32.488775+00	\N	\N	f	0.00	\N	\N	\N
+574f1a95-0250-4131-a960-bc4daefce52e	3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 15:50:33.9261+00	2026-06-15 15:50:33.9261+00	\N	\N	f	0.00	\N	\N	\N
+596b65ab-9337-4f5f-a178-7e608431c1d7	bdb4d02b-fdb8-481a-949a-1793843e552b	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 15:50:36.296772+00	2026-06-15 15:50:36.296772+00	\N	\N	f	0.00	\N	\N	\N
+09acc7ad-d731-4983-9f0c-85097f365ef7	712e33d3-a45d-4ec6-82e1-488c453c04af	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 15:50:37.758943+00	2026-06-15 15:50:37.758943+00	\N	\N	f	0.00	\N	\N	\N
+e3c06ff5-0fe6-4c3a-8e6d-dbe78fc09a2a	4557c818-1e9d-4727-b43e-bcc5492248d6	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 15:50:39.320869+00	2026-06-15 15:50:39.320869+00	\N	\N	f	0.00	\N	\N	\N
+51a417dd-952a-4fd7-8df4-acf287bce530	846e1200-4c52-443a-8e39-3c7e1a60e6d0	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 15:50:41.907222+00	2026-06-15 15:50:41.907222+00	\N	\N	f	0.00	\N	\N	\N
+84e4f913-dd9c-4918-8adc-0dbca4703900	634eadc7-857c-4ff9-8163-5b54a9eb0dda	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-06-15 15:51:36.801539+00	2026-06-15 15:51:38.826652+00	\N	1	t	0.00	\N	\N	\N
+a6d4f103-fb36-481c-a0da-acc55cf1dda4	634eadc7-857c-4ff9-8163-5b54a9eb0dda	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	\N	2026-06-15 15:51:36.801539+00	2026-06-15 15:51:38.963431+00	\N	1	t	0.00	\N	\N	\N
+4623a9dd-d41e-4487-b795-25997fda5acb	b457ab88-16a4-423c-a37c-7c9373b01e00	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-06-15 16:03:54.94945+00	2026-06-15 16:03:55.875812+00	\N	2	t	0.00	\N	\N	\N
+e500ce49-19d5-4799-ac51-89c496b238e6	b457ab88-16a4-423c-a37c-7c9373b01e00	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	\N	2026-06-15 16:03:54.94945+00	2026-06-15 16:03:55.912383+00	\N	1	t	0.00	\N	\N	\N
+930bc2e5-8a56-4385-8d16-ddd393e48e48	06a1f38a-7a9b-4821-9370-040ff3df9e56	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-06-15 16:04:00.515329+00	2026-06-15 16:04:00.515329+00	\N	\N	f	0.00	\N	\N	\N
+c5cfa8f5-191f-4247-836e-11e602684b44	e23d80e3-a890-4a3a-801a-b2b74b3e07d6	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	5	198.50	\N	2026-06-15 16:04:02.638432+00	2026-06-15 16:04:02.67498+00	\N	\N	f	0.00	\N	\N	\N
+3c32c3b9-f362-4e37-a54c-ccfb7d4f57a6	17f6af5e-4fd3-468b-8f54-1a522a6328da	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:04:04.809129+00	2026-06-15 16:04:04.809129+00	\N	\N	f	0.00	\N	\N	\N
+d0e53ff0-c1ef-45a3-bf64-724ae6d65fff	53b0ca21-ecda-4875-8b88-45e6a4426f74	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:04:06.904612+00	2026-06-15 16:04:06.904612+00	\N	\N	f	0.00	\N	\N	\N
+bb329d26-f833-434e-bc60-fb6b97fd51bb	7e3dbefd-9e34-4af7-8137-bd435e68555e	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:04:10.006973+00	2026-06-15 16:04:10.006973+00	\N	\N	f	0.00	\N	\N	\N
+8e75487e-7798-459b-9d91-bf2f78b01b07	afd7ad6c-776b-4c2c-9c6a-ce0134c65366	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:04:12.237768+00	2026-06-15 16:04:12.237768+00	\N	\N	f	0.00	\N	\N	\N
+6e9a75db-0b86-4ee8-a3a1-47e2285db9bf	5913d330-9751-4b2e-b4d8-1696ce89b897	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:04:14.558401+00	2026-06-15 16:04:14.558401+00	\N	\N	f	0.00	\N	\N	\N
+d185de14-cc16-41e7-a05f-72ad71b23edd	40505262-756a-49d3-9366-d9b9feb92cd6	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:04:18.57493+00	2026-06-15 16:04:18.57493+00	\N	\N	f	0.00	\N	\N	\N
+0769b497-f3ce-4e1b-887a-cea724ccd950	a90de1fe-e8f3-4c96-8107-69eba971d1a8	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-06-15 16:04:51.475748+00	2026-06-15 16:04:53.693065+00	\N	1	t	0.00	\N	\N	\N
+fda13102-756e-4fac-8026-ee784d4324a5	a90de1fe-e8f3-4c96-8107-69eba971d1a8	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	\N	2026-06-15 16:04:51.475748+00	2026-06-15 16:04:53.822503+00	\N	1	t	0.00	\N	\N	\N
+78e566d8-5a6a-40f6-82d0-9e10858202b8	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-06-15 16:53:28.275024+00	2026-06-15 16:53:29.105524+00	\N	2	t	0.00	\N	\N	\N
+9e54c94b-2cff-469b-97e1-8deb561cdbb6	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	\N	2026-06-15 16:53:28.275024+00	2026-06-15 16:53:29.140303+00	\N	1	t	0.00	\N	\N	\N
+204c3a7d-2dc8-4fb7-bc1e-57490e63e96b	70932ee6-bdba-4e93-b487-e0e51c7452f9	31b2d93c-67d9-4b01-98ec-c4c1130fc635	BIOCABASTINE 0,05℅ FL/5ML COLLYRE	1	380.41	\N	2026-06-15 16:12:09.835448+00	2026-06-15 16:20:36.259666+00	\N	0	t	0.00	\N	\N	\N
+3b8c1adf-c358-4229-a40d-f6f48230246a	70932ee6-bdba-4e93-b487-e0e51c7452f9	bd0ee39a-b886-4631-8dd9-50e77aef7b27	BIOFENAC. 100MG B/10 SUPPO	1	107.40	\N	2026-06-15 16:12:09.835448+00	2026-06-15 16:20:36.358585+00	\N	0	t	0.00	\N	\N	\N
+11a85157-854d-4c78-b93b-1ca890b9bdce	70932ee6-bdba-4e93-b487-e0e51c7452f9	6ef1aae9-5d86-46ca-ae3e-dcd15e0ffceb	BIOPAMOX. 250MG/5ML FL/60ML PDRE.P.SUSP.	2	200.41	\N	2026-06-15 16:12:09.835448+00	2026-06-15 16:20:36.471429+00	\N	0	t	0.00	\N	\N	\N
+34ac5d2b-6707-47f1-b7da-8ea9471fc223	70932ee6-bdba-4e93-b487-e0e51c7452f9	3e947b0c-090b-468e-a135-344ba0de8b6a	CALCIDOSE 500MG B/30 SH	2	400.00	\N	2026-06-15 16:12:09.835448+00	2026-06-15 16:20:36.520681+00	\N	0	t	0.00	\N	\N	\N
+7282c955-27be-4c16-8858-3f47ab3705c2	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-06-15 16:43:18.567044+00	2026-06-15 16:43:19.311316+00	\N	2	t	0.00	\N	\N	\N
+7ac9cea4-44f2-48f4-a660-8a4d39f85212	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	592e33a9-acd2-410c-81f2-6cb3f8f17298	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	1	455.58	\N	2026-06-15 16:43:18.567044+00	2026-06-15 16:43:19.344007+00	\N	1	t	0.00	\N	\N	\N
+ca6b987a-7509-444a-b784-06147ba6c4ab	0b133ab5-eeb5-42b1-8079-3e31ad4f13aa	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-06-15 16:43:23.151611+00	2026-06-15 16:43:23.151611+00	\N	\N	f	0.00	\N	\N	\N
+eaf545e9-3d5e-4870-976e-d8ff41dbf25d	f619698f-e21f-4f0a-9fc3-e615b19b2d35	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	5	198.50	\N	2026-06-15 16:43:24.668551+00	2026-06-15 16:43:24.710552+00	\N	\N	f	0.00	\N	\N	\N
+c9f600b0-a245-4e57-90e9-4bfc86cea201	fbceed4c-73b9-475f-9ebc-48f2aed910f9	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:43:26.219427+00	2026-06-15 16:43:26.219427+00	\N	\N	f	0.00	\N	\N	\N
+ee77f140-f7ab-4904-bd59-564c6295027b	9d504663-a4f6-4855-bdec-407cfabc199a	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:43:27.547502+00	2026-06-15 16:43:27.547502+00	\N	\N	f	0.00	\N	\N	\N
+f37d5673-e4c2-4b2d-a2da-0dc8c6fac4d6	54d4a168-cd3c-4ad7-8531-def1a75875e3	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:43:29.803905+00	2026-06-15 16:43:29.803905+00	\N	\N	f	0.00	\N	\N	\N
+41375fc8-b629-4e29-9a1c-04b609bfc8ba	a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:43:31.18495+00	2026-06-15 16:43:31.18495+00	\N	\N	f	0.00	\N	\N	\N
+5b03ce82-f035-4ecd-8e8e-954d86c02ce3	2a5a4167-cccc-4d00-87b1-0eff74f20216	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:43:32.672836+00	2026-06-15 16:43:32.672836+00	\N	\N	f	0.00	\N	\N	\N
+661be1fa-95fd-40cd-8654-cc14c2a0ebf0	b705c340-b2ca-4528-91b2-f3ca83436d38	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:43:35.410846+00	2026-06-15 16:43:35.410846+00	\N	\N	f	0.00	\N	\N	\N
+ca9ba7f0-166a-4f58-a63d-de08076cee9b	453dcf46-2d66-4bd3-b62d-7fb36a3effc4	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	2	198.50	\N	2026-06-15 16:53:37.187753+00	2026-06-15 16:53:37.187753+00	\N	\N	f	0.00	\N	\N	\N
+02120740-d579-4d16-b8ff-c08751aaf4c6	2fc0b24c-d935-4eac-9157-8563b3a8f368	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	5	198.50	\N	2026-06-15 16:53:38.572381+00	2026-06-15 16:53:38.610511+00	\N	\N	f	0.00	\N	\N	\N
+a2733797-c0ab-4409-8ca0-8d439f636017	d9a2e9ba-5d30-42c9-a776-f05e2ba3c181	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:53:40.012486+00	2026-06-15 16:53:40.012486+00	\N	\N	f	0.00	\N	\N	\N
+1824862c-ee51-4488-b937-e59607e53d6a	1c82273c-17f9-46c1-984b-ba0d11ce9022	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:53:41.444322+00	2026-06-15 16:53:41.444322+00	\N	\N	f	0.00	\N	\N	\N
+4d93b7d6-56e3-410f-b25c-d22a399cdc38	e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:53:43.832536+00	2026-06-15 16:53:43.832536+00	\N	\N	f	0.00	\N	\N	\N
+7de443ae-f517-4429-8f0f-64b78c44dcee	5b7c805d-1652-4f86-997e-88a6cedb2195	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:53:45.365555+00	2026-06-15 16:53:45.365555+00	\N	\N	f	0.00	\N	\N	\N
+1231efcc-bf96-44be-9438-30b648e1de4c	84f1e647-a353-47f8-9bdf-ee221e62ca60	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:53:46.915217+00	2026-06-15 16:53:46.915217+00	\N	\N	f	0.00	\N	\N	\N
+8fb129ae-cc33-46ed-abba-8be5fe4c1b13	d24acb48-0718-4829-a4ed-fe14a7802da7	02787863-90cc-4020-93a4-0fc4bab203c7	ALLERTINE. 10MG B/20 COMP. SEC	1	198.50	\N	2026-06-15 16:53:49.849639+00	2026-06-15 16:53:49.849639+00	\N	\N	f	0.00	\N	\N	\N
 \.
 
 
@@ -1132,7 +1983,6 @@ bf6c5dc4-6d96-4c7f-ad2a-eb77d4fef2f6	6e7ffbab-0205-4987-b782-0f9dfae7d304	592e33
 COPY public.medicaments (id, code_article, designation, dci, dosage, forme, ppa, fabricant, created_at, updated_at, created_by, stock_quantity, image_path, featured) FROM stdin;
 2022fa77-0632-475d-8ff3-40ebb1869f4a	100469	DOLIPRANE. 1000MG B/8 COMP	\N	\N	\N	100.11	PROPHARMAL	2026-03-26 10:46:23.86055+00	2026-04-01 15:54:31.561759+00	\N	124	\N	f
 6bf0f9f2-b32b-4531-a5dc-70fe95d22122	102601	D-THREE 200 000UI/ML B/1AMP SOL.INJ	\N	\N	\N	154.98	BIOTHERA SPA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	87	\N	f
-31b2d93c-67d9-4b01-98ec-c4c1130fc635	102606	BIOCABASTINE 0,05℅ FL/5ML COLLYRE	\N	\N	\N	380.41	BIOTHERA SPA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	195	\N	f
 ceb9eb32-2a7d-4dc2-9067-108dd35a3898	103595	DOLYC. 1000MG B/10 COMP	\N	\N	\N	107.08	MERINAL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	83	\N	f
 e69ff623-2b32-4abf-8680-b87723647fa3	102155	BANDELETTES REACTIVES BIONIME  B/50	\N	\N	\N	1500.00	EXPENSIMED -SARL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	83	\N	f
 88b5e910-42ac-4730-accc-794716afcc99	103549	ZECUF. 100MG/60MG FL/120ML SIROP	\N	\N	\N	164.80	BIOPHARM	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	164	\N	f
@@ -1185,9 +2035,9 @@ ddb60ae4-703f-40c9-975f-1310f11aea22	102733	FLUDEX LP. 1,5MG B/30 COMP. ENRO	\N	
 6f6d653e-1b45-442a-9fc0-79094297f312	102638	MICROBAN 2℅ T/15G PDE	\N	\N	\N	436.55	BIOPHARM	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	48	\N	f
 af1dce31-cec9-4fda-9329-0d712504057c	101835	IBUTHOL 5%-3%  T/50G GEL	\N	\N	\N	415.01	NOVAPHARM	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	52	\N	f
 5324d9c2-76ab-47ae-9315-762c637ab9c9	101320	LAMOGINE. 100MG B/30 COMP. SEC	\N	\N	\N	1699.92	SPA DIMED AZAZGA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	142	\N	f
-592e33a9-acd2-410c-81f2-6cb3f8f17298	101260	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	\N	\N	\N	455.58	HIKMA	2026-03-26 10:46:23.86055+00	2026-04-13 20:21:37.447254+00	\N	15	\N	f
 67fa873a-35b0-4fe6-b298-b16ad881a6fd	103708	KIETYL. 6MG B/30 COMP. QUADRI.SEC	\N	\N	\N	241.73	MERINAL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	64	\N	f
 ebd03bee-a78b-42fc-8b71-080d8212d153	103382	MELAZA 1G B/15 SUPPO	\N	\N	\N	2919.01	SPA DIMED AZAZGA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	116	\N	f
+31b2d93c-67d9-4b01-98ec-c4c1130fc635	102606	BIOCABASTINE 0,05℅ FL/5ML COLLYRE	\N	\N	\N	380.41	BIOTHERA SPA	2026-03-26 10:46:23.86055+00	2026-06-15 16:14:02.696749+00	\N	194	\N	f
 152e22ac-2097-4928-b645-6b1df6e80f60	100128	COEXPANDOL 400MG/20MG B/16 COMP	\N	\N	\N	119.81	BIOGALENIC SARL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	128	\N	f
 6eb24a03-0742-4a48-98a0-7ccde1425db8	105308	MEGAMYLASE SIROP FL125 ML	\N	\N	\N	187.12	BIOPHARM	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	157	\N	f
 0029ee37-f901-46a4-9eb5-d41d164c8103	102620	THERAFRESH 0,2℅ FL/10ML COLLYRE	\N	\N	\N	998.07	BIOTHERA SPA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	15	\N	f
@@ -1205,7 +2055,6 @@ b1353279-83a9-4d7a-a6a8-c3481da6139c	103593	CO-DOLYC 500MG/30MG B/20 COMP	\N	\N	
 6ecd7702-e826-4279-b480-59afa6a97df7	100454	TELFAST 120 MG B/15  COMP.PELLI	\N	\N	\N	226.50	PROPHARMAL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	117	\N	f
 e42c1764-5523-4ed4-b52d-290fdd10e7e0	101691	CUTACNYL 10% T/40G GEL	\N	\N	\N	264.40	SPA DIMED AZAZGA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	193	\N	f
 524c5fb4-4f2c-49f2-8432-90ca2cc013f9	100587	XAMADOL. 325MG/37,5MG B/20 COMP. PELLI	\N	\N	\N	333.35	BIOPHARM	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	75	\N	f
-3e947b0c-090b-468e-a135-344ba0de8b6a	103700	CALCIDOSE 500MG B/30 SH	\N	\N	\N	400.00	SPA DIMED AZAZGA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	79	\N	f
 e119e611-bac0-4f7c-b95e-4355da3dbc7a	100964	DEPRETINE. 20MG B/30 COMP	\N	\N	\N	1596.00	EL KENDI SPA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	33	\N	f
 d3332ba8-f855-40cc-bf1c-ebf8bc2a4724	105208	CORONOL PLUS 1MG/ML+3MG/ML FL/5ML COLL	\N	\N	\N	342.18	GENERIC LAB SARL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	26	\N	f
 d301b519-7d97-4df6-8b7f-99321a9965b3	103292	BETSOL. 0,5MG/ML FL/15ML LOT.DERM	\N	\N	\N	199.32	SPA DIMED AZAZGA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	162	\N	f
@@ -1226,14 +2075,12 @@ c5066342-35e2-4e77-a282-e03f94f8e9d7	103044	GLUCOPHAGE 850MG B/90 COMP. PELLI	\N
 74b28038-7f09-4e38-94de-8663150fbb77	100307	GECTAPEN. 1 000 000UI B/1 PDRE.P.SOL.INJ	\N	\N	\N	142.70	SAIDAL  SPA DISTRIBUTION	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	3	\N	f
 96f86264-21b4-4624-93c2-a84ab4a73eb5	101097	CETALGINE. 300MG B/10 SUPPO	\N	\N	\N	141.16	SALEM LABORATOIRE SARL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	159	\N	f
 89d5ed34-a1ae-4c0d-a081-e57a52bf52ef	103121	BIOCLAV ADULTES. 1G/125MG B/12 SH	\N	\N	\N	737.35	BIOCARE SPA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	7	\N	f
-6ef1aae9-5d86-46ca-ae3e-dcd15e0ffceb	103096	BIOPAMOX. 250MG/5ML FL/60ML PDRE.P.SUSP.	\N	\N	\N	200.41	BIOCARE SPA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	187	\N	f
 c78104d2-46d5-49ee-b6ab-151900cea1e8	102902	SAPRAMOL. 300MG B/12 SH	\N	\N	\N	115.32	PROVIVO	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	198	\N	f
 c4e77422-c7f3-4011-88b1-55232d4bf98c	101534	COBAMINE. 1000µG/ML B/5AMP SOL.INJ	\N	\N	\N	220.00	SAIDAL  SPA DISTRIBUTION	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	147	\N	f
 d4a4f866-09a2-48ae-9899-356112e99296	103640	VOLTUM 2℅ T/50G EMULGEL	\N	\N	\N	191.90	PHARMALLIANCE LABORATOIRES	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	129	\N	f
 c459f9ab-45f0-4f9d-a550-390cbc27e360	100559	ATACAND EL-DJAZAIR 16MG B/30 COMP. SEC	\N	\N	\N	1287.50	SPA DIMED AZAZGA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	48	\N	f
 22a9bb22-6149-41d7-952c-06a41a5836ed	104207	HIMOXYL. 250MG/5ML FL/60ML PDRE.SUS.BUV	\N	\N	\N	197.40	EURL GENIS	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	89	\N	f
 60b3d23b-7a49-42c2-8dc1-e63a13d8a224	102587	BIOLESTENE CHRONODOSE 5.7MG/ML  B/1AMP S	\N	\N	\N	187.91	BIOTHERA SPA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	76	\N	f
-02787863-90cc-4020-93a4-0fc4bab203c7	101371	ALLERTINE. 10MG B/20 COMP. SEC	\N	\N	\N	198.50	SAIDAL  SPA DISTRIBUTION	2026-03-26 10:46:23.86055+00	2026-04-13 20:21:23.16632+00	\N	81	\N	f
 23b8d8a5-22e8-4197-a44f-f77df51a9427	100162	TRIMEBUTINE-B 0,787G/100G FL/250ML SUSP.	\N	\N	\N	311.52	BIOGALENIC SARL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	178	\N	f
 0e0413b5-fdaf-42a8-8a3f-f61af8cef26e	101229	ZOMAX. 40MG/ML FL/30ML PDRE.P.SUSP.BUV	\N	\N	\N	855.64	HIKMA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	34	\N	f
 36f4b481-e00d-4014-8fd6-e1a159aaf576	100904	LOCAZONE 0,1℅ T/15G CREME.CUTANEE	\N	\N	\N	203.49	EL KENDI SPA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	159	\N	f
@@ -1246,8 +2093,8 @@ f8e8d8ec-5b27-435a-aa18-228df987e4de	101223	ZOMAX 40MG/ML FL/15ML PDRE.P.SUSP.BU
 953c0383-c8f4-4314-89e6-cadfb7808947	100482	DONICORT 64µG/DOSE FL/120DOSES SUSP.NAS	\N	\N	\N	649.61	BIOGALENIC SARL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	91	\N	f
 413704c7-8e5d-445c-8b46-84b61cfd1169	101897	LEMOD SOLU. 40MG B/1 PDRE.P.SOL.INJ	\N	\N	\N	206.05	GEO PHARM PRODUCTION	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	23	\N	f
 2f816437-9c70-4901-a2d9-f661737a90a1	100693	SMECTA. 3G B/30 SH	\N	\N	\N	406.61	AT PHARMA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	185	\N	f
+3e947b0c-090b-468e-a135-344ba0de8b6a	103700	CALCIDOSE 500MG B/30 SH	\N	\N	\N	400.00	SPA DIMED AZAZGA	2026-03-26 10:46:23.86055+00	2026-06-15 16:14:02.696749+00	\N	77	\N	f
 8e1cde62-bb09-4d9c-bef5-9e81ac6622d7	102099	HUMEX RHUME. 500MG/60MG B/12 COMP	\N	\N	\N	340.67	UNILAB	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	51	\N	f
-bd0ee39a-b886-4631-8dd9-50e77aef7b27	103246	BIOFENAC. 100MG B/10 SUPPO	\N	\N	\N	107.40	SPA DIMED AZAZGA	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	184	\N	f
 c256cc07-1613-449a-a081-865b4cd18362	100860	GLYCERINE GPA BéBé B/10 SUPPO	\N	\N	\N	175.00	BIOPHARM	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	156	\N	f
 3ff2fa32-995b-42c8-aa98-9418cdd9ccbb	103614	XYDOL. 200MG B/20 COMP. PELLI	\N	\N	\N	122.36	MERINAL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	20	\N	f
 6a2e419e-eef6-4531-aa32-7182f1647503	100471	DOLIPRANE 2.4% SANS SUCRE. 120MG/5ML FL/	\N	\N	\N	165.63	PROPHARMAL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	187	\N	f
@@ -1329,6 +2176,10 @@ bd05e4e7-ed79-463a-b0bc-88bea0e00146	103016	PROSTASIR LP. 0,4MG B/30 GLES	\N	\N	
 bd7b8de8-7fa4-4263-a9ec-b6ab31e8853a	105172	DERMAZOLE   0,02 T/20G CREME	\N	\N	\N	228.94	PHARMAGHREB LABORATOIRES	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	0	\N	f
 b341e09b-3c3a-4c2f-a8bc-a94f44e1b79a	100643	NEWFINE  T/50G APP.CUTANEE	\N	\N	\N	350.00	NEW GALINICA SARL	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	0	\N	f
 aec61c3d-971c-4b13-a145-28834d0bff3e	102239	ISOMEDINE. 0,1% FL/50ML SOL.DERM	\N	\N	\N	139.49	ISOPHARM	2026-03-26 10:46:23.86055+00	2026-03-26 10:46:23.86055+00	\N	0	\N	f
+6ef1aae9-5d86-46ca-ae3e-dcd15e0ffceb	103096	BIOPAMOX. 250MG/5ML FL/60ML PDRE.P.SUSP.	\N	\N	\N	200.41	BIOCARE SPA	2026-03-26 10:46:23.86055+00	2026-06-15 16:14:02.696749+00	\N	185	\N	f
+bd0ee39a-b886-4631-8dd9-50e77aef7b27	103246	BIOFENAC. 100MG B/10 SUPPO	\N	\N	\N	107.40	SPA DIMED AZAZGA	2026-03-26 10:46:23.86055+00	2026-06-15 16:14:02.696749+00	\N	183	\N	f
+592e33a9-acd2-410c-81f2-6cb3f8f17298	101260	AMOCLAN 8:1 ENFTS. 500MG/62,5MG B/14 SH	\N	\N	\N	455.58	HIKMA	2026-03-26 10:46:23.86055+00	2026-06-15 16:53:28.367368+00	\N	9	\N	f
+02787863-90cc-4020-93a4-0fc4bab203c7	101371	ALLERTINE. 10MG B/20 COMP. SEC	\N	\N	\N	198.50	SAIDAL  SPA DISTRIBUTION	2026-03-26 10:46:23.86055+00	2026-06-15 16:53:45.454935+00	\N	57	\N	f
 \.
 
 
@@ -1381,6 +2232,119 @@ abf3c421-31f8-489c-8fa3-a499d5ebb015	80b3ae99-edfc-4220-a471-03c5366fb10d	81b651
 c83167c0-bf2a-4367-8d6c-7d98413e31c9	80b3ae99-edfc-4220-a471-03c5366fb10d	18a1fd87-3e0b-477f-a337-39709652df94	en_route	Commande C00000031 en cours de livraison	f	2026-04-13 20:22:47.308153+00
 9dff1a4a-1023-4e76-9614-a00386601e0c	80b3ae99-edfc-4220-a471-03c5366fb10d	6e7ffbab-0205-4987-b782-0f9dfae7d304	en_route	Commande C00000028 en cours de livraison	f	2026-04-13 20:24:15.65648+00
 ab7870a7-5663-4e17-84ea-b4cf6cabb423	80b3ae99-edfc-4220-a471-03c5366fb10d	6e7ffbab-0205-4987-b782-0f9dfae7d304	livree	Commande C00000028 livrée	f	2026-04-13 20:24:24.901595+00
+4113e472-d5c0-406c-8eb0-edfecafa9ee3	80b3ae99-edfc-4220-a471-03c5366fb10d	7646e2c0-c917-471f-98a8-29c2fc69479b	acceptee	Commande C00000033 acceptée	f	2026-06-15 15:50:25.638123+00
+c708c523-4407-4d39-b198-452a9373c617	80b3ae99-edfc-4220-a471-03c5366fb10d	7646e2c0-c917-471f-98a8-29c2fc69479b	en_preparation	Commande C00000033 en préparation	f	2026-06-15 15:50:26.18508+00
+3432a817-5f5f-465e-8775-a58078671e76	80b3ae99-edfc-4220-a471-03c5366fb10d	7646e2c0-c917-471f-98a8-29c2fc69479b	commande_chargee	Commande C00000033 chargée dans le camion	f	2026-06-15 15:50:28.189166+00
+9ad91ff1-b86b-4665-8b8e-d8ef4f858cc6	80b3ae99-edfc-4220-a471-03c5366fb10d	7646e2c0-c917-471f-98a8-29c2fc69479b	en_route	Commande C00000033 en cours de livraison	f	2026-06-15 15:50:28.314129+00
+c1c157e8-1c9b-4789-9cb6-4949a5fac72e	80b3ae99-edfc-4220-a471-03c5366fb10d	3f8b751f-b7e4-4caf-a7f1-66a3cc2f9f5e	acceptee	Commande C00000037 acceptée	f	2026-06-15 15:50:34.424437+00
+c88105e5-7ba4-433b-be0a-d520b806a5b6	80b3ae99-edfc-4220-a471-03c5366fb10d	bdb4d02b-fdb8-481a-949a-1793843e552b	acceptee	Commande C00000038 acceptée	f	2026-06-15 15:50:36.431061+00
+995c1756-5b5c-45a7-b780-4770c8c06eee	80b3ae99-edfc-4220-a471-03c5366fb10d	712e33d3-a45d-4ec6-82e1-488c453c04af	refusee	Commande C00000039 refusee : Quantité erronée, merci de corriger la ligne 1	f	2026-06-15 15:50:37.807666+00
+522de9c8-84a2-44ff-abea-e56f4309d241	80b3ae99-edfc-4220-a471-03c5366fb10d	712e33d3-a45d-4ec6-82e1-488c453c04af	acceptee	Commande C00000039 acceptée	f	2026-06-15 15:50:37.946248+00
+4be1e786-9b2a-4c65-9f79-f7e06ab4e3e3	80b3ae99-edfc-4220-a471-03c5366fb10d	634eadc7-857c-4ff9-8163-5b54a9eb0dda	acceptee	Commande C00000042 acceptée	f	2026-06-15 15:51:37.156763+00
+22c3fc23-3a20-459c-93cb-0404f62124b4	80b3ae99-edfc-4220-a471-03c5366fb10d	634eadc7-857c-4ff9-8163-5b54a9eb0dda	en_preparation	Commande C00000042 en préparation	f	2026-06-15 15:51:38.11798+00
+22046682-100e-4abd-b9ee-9ebea8978af8	80b3ae99-edfc-4220-a471-03c5366fb10d	b457ab88-16a4-423c-a37c-7c9373b01e00	acceptee	Commande C00000043 acceptée	f	2026-06-15 16:03:55.270556+00
+ceb8e628-1c98-4262-a9cc-019a3717ba86	80b3ae99-edfc-4220-a471-03c5366fb10d	b457ab88-16a4-423c-a37c-7c9373b01e00	en_preparation	Commande C00000043 en préparation	f	2026-06-15 16:03:55.805185+00
+5a2566f1-4809-417b-92bd-d1930fffa43c	80b3ae99-edfc-4220-a471-03c5366fb10d	b457ab88-16a4-423c-a37c-7c9373b01e00	commande_chargee	Commande C00000043 chargée dans le camion	f	2026-06-15 16:03:58.294891+00
+aae52ba2-8b1d-4554-90fc-5d856d4cc610	80b3ae99-edfc-4220-a471-03c5366fb10d	b457ab88-16a4-423c-a37c-7c9373b01e00	en_route	Commande C00000043 en cours de livraison	f	2026-06-15 16:03:58.42485+00
+7abe2bea-e756-4cf4-af46-9a41b995affb	80b3ae99-edfc-4220-a471-03c5366fb10d	53b0ca21-ecda-4875-8b88-45e6a4426f74	acceptee	Commande C00000047 acceptée	f	2026-06-15 16:04:07.52919+00
+10b3ef37-cc77-43b2-9fe7-0880fa0704b5	80b3ae99-edfc-4220-a471-03c5366fb10d	7e3dbefd-9e34-4af7-8137-bd435e68555e	acceptee	Commande C00000048 acceptée	f	2026-06-15 16:04:10.171752+00
+d650cefd-0916-41d1-9199-28896313ce26	80b3ae99-edfc-4220-a471-03c5366fb10d	afd7ad6c-776b-4c2c-9c6a-ce0134c65366	refusee	Commande C00000049 refusee : Quantité erronée, merci de corriger la ligne 1	f	2026-06-15 16:04:12.290061+00
+dc36b932-da97-4c70-adfa-9b0c5e1c14fe	80b3ae99-edfc-4220-a471-03c5366fb10d	afd7ad6c-776b-4c2c-9c6a-ce0134c65366	acceptee	Commande C00000049 acceptée	f	2026-06-15 16:04:12.483802+00
+c571dff9-ef03-4a10-a690-fe552e994fc4	80b3ae99-edfc-4220-a471-03c5366fb10d	a90de1fe-e8f3-4c96-8107-69eba971d1a8	acceptee	Commande C00000052 acceptée	f	2026-06-15 16:04:51.928457+00
+8c63ff05-7979-4d24-b9f2-719348c7b638	80b3ae99-edfc-4220-a471-03c5366fb10d	a90de1fe-e8f3-4c96-8107-69eba971d1a8	en_preparation	Commande C00000052 en préparation	f	2026-06-15 16:04:53.17709+00
+7b854c98-25f6-42a1-82dd-67fd6fee9d04	80b3ae99-edfc-4220-a471-03c5366fb10d	70932ee6-bdba-4e93-b487-e0e51c7452f9	acceptee	Commande C00000053 acceptée	f	2026-06-15 16:14:02.962329+00
+f25ca17a-1aed-463c-8480-f6af7dd676c6	80b3ae99-edfc-4220-a471-03c5366fb10d	70932ee6-bdba-4e93-b487-e0e51c7452f9	en_preparation	Commande C00000053 en préparation	f	2026-06-15 16:15:35.053692+00
+c353e36b-4e93-4298-9876-74dc047e1b8c	80b3ae99-edfc-4220-a471-03c5366fb10d	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	acceptee	Commande C00000054 acceptée	f	2026-06-15 16:43:18.804167+00
+0fa09684-1373-4843-86e0-0e1db644d539	80b3ae99-edfc-4220-a471-03c5366fb10d	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	en_preparation	Commande C00000054 en préparation	f	2026-06-15 16:43:19.264389+00
+97e3a30c-5fb9-4e8f-a9ed-f625630d95ed	80b3ae99-edfc-4220-a471-03c5366fb10d	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	commande_chargee	Commande C00000054 chargée dans le camion	f	2026-06-15 16:43:21.169979+00
+531a9dd8-e392-4b18-9a85-14fad57e236c	80b3ae99-edfc-4220-a471-03c5366fb10d	c7c6368e-e59a-49c9-b59d-1c42c7f6d935	en_route	Commande C00000054 en cours de livraison	f	2026-06-15 16:43:21.28877+00
+87743d0b-139f-4af1-84ca-90486e81bfa2	80b3ae99-edfc-4220-a471-03c5366fb10d	9d504663-a4f6-4855-bdec-407cfabc199a	acceptee	Commande C00000058 acceptée	f	2026-06-15 16:43:28.103118+00
+12d22504-9f76-4da6-9328-326dd951ec74	80b3ae99-edfc-4220-a471-03c5366fb10d	54d4a168-cd3c-4ad7-8531-def1a75875e3	acceptee	Commande C00000059 acceptée	f	2026-06-15 16:43:29.932483+00
+fa4c87dd-7226-475a-98dc-21a76286341d	80b3ae99-edfc-4220-a471-03c5366fb10d	a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd	refusee	Commande C00000060 refusee : Quantité erronée, merci de corriger la ligne 1	f	2026-06-15 16:43:31.231924+00
+54ba9cc1-141b-49d3-b6bf-dea24c89df42	80b3ae99-edfc-4220-a471-03c5366fb10d	a849bccb-fcb6-4b8c-82ef-0e46ca89c5fd	acceptee	Commande C00000060 acceptée	f	2026-06-15 16:43:31.358954+00
+ffefba03-ffff-4cf0-9b89-063051b03548	80b3ae99-edfc-4220-a471-03c5366fb10d	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	acceptee	Commande C00000063 acceptée	f	2026-06-15 16:53:28.532061+00
+7e236c88-e912-42d5-9e16-f8bb8d824934	80b3ae99-edfc-4220-a471-03c5366fb10d	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	en_preparation	Commande C00000063 en préparation	f	2026-06-15 16:53:29.041054+00
+ac850c83-0068-4ce8-ab28-a90318d63d88	6d4d8a0c-d618-4646-867d-4b833a795014	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	commande_controlee	Commande C00000063 contrôlée — 3 colis, étiquettes QR à imprimer/coller	f	2026-06-15 16:53:29.779869+00
+a0ae1be9-8cec-4355-9712-3730c8a106f5	80b3ae99-edfc-4220-a471-03c5366fb10d	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	commande_chargee	Commande C00000063 chargée dans le camion	f	2026-06-15 16:53:31.238597+00
+b7c3065a-a8d7-4d29-8975-b9209d698def	80b3ae99-edfc-4220-a471-03c5366fb10d	ad4f35e7-6d9f-4d78-9a68-a26a75a25e0a	en_route	Commande C00000063 en cours de livraison	f	2026-06-15 16:53:31.37842+00
+524be826-ff8c-42e8-88d2-d16833c253cd	80b3ae99-edfc-4220-a471-03c5366fb10d	1c82273c-17f9-46c1-984b-ba0d11ce9022	acceptee	Commande C00000067 acceptée	f	2026-06-15 16:53:42.006805+00
+7975c04b-0654-4109-a54d-739b21961334	80b3ae99-edfc-4220-a471-03c5366fb10d	e19fd8f0-1dc2-4dba-ab94-bd32bb9fc2c5	acceptee	Commande C00000068 acceptée	f	2026-06-15 16:53:43.998199+00
+8f103330-b15a-4b25-8cf1-2f4f3e0d0738	80b3ae99-edfc-4220-a471-03c5366fb10d	5b7c805d-1652-4f86-997e-88a6cedb2195	refusee	Commande C00000069 refusee : Quantité erronée, merci de corriger la ligne 1	f	2026-06-15 16:53:45.417578+00
+7f985ec7-8258-4fa2-9d46-4c290438b899	80b3ae99-edfc-4220-a471-03c5366fb10d	5b7c805d-1652-4f86-997e-88a6cedb2195	acceptee	Commande C00000069 acceptée	f	2026-06-15 16:53:45.549405+00
+\.
+
+
+--
+-- Data for Name: pads_tir; Type: TABLE DATA; Schema: public; Owner: dimed
+--
+
+COPY public.pads_tir (id, code, nom, actif, created_at, updated_at, created_by) FROM stdin;
+9b9f4153-1b16-4704-975c-8090f9e6e301	PAD-01	Pad de tir 1	t	2026-06-15 15:48:45.610871+00	2026-06-15 15:48:45.610871+00	\N
+391020b3-c3f0-43b6-814f-f1165e33b8fb	PAD-02	Pad de tir 2	t	2026-06-15 15:48:45.610871+00	2026-06-15 15:48:45.610871+00	\N
+36c04a24-b7a0-4364-b0fe-1add06993c7d	PAD-03	Pad de tir 3	t	2026-06-15 15:48:45.610871+00	2026-06-15 15:48:45.610871+00	\N
+ad8f839b-fb6c-48ff-a2cb-f1e1ee8e9d8a	PAD-04	Pad de tir 4	t	2026-06-15 15:48:45.610871+00	2026-06-15 15:48:45.610871+00	\N
+5a08c991-0c82-47c4-ab81-a45cc7d59f72	PAD-05	Pad de tir 5	t	2026-06-15 15:48:45.610871+00	2026-06-15 15:48:45.610871+00	\N
+209192b7-ff15-454a-94f5-59ad34127535	PAD-06	Pad de tir 6	t	2026-06-15 15:48:45.610871+00	2026-06-15 15:48:45.610871+00	\N
+\.
+
+
+--
+-- Data for Name: reclamations; Type: TABLE DATA; Schema: public; Owner: dimed
+--
+
+COPY public.reclamations (id, pharmacien_id, commande_id, motif, description, statut, resolution, created_at, updated_at, created_by) FROM stdin;
+\.
+
+
+--
+-- Data for Name: scans_colis; Type: TABLE DATA; Schema: public; Owner: dimed
+--
+
+COPY public.scans_colis (id, colis_id, type_scan, user_id, pad_tir_id, created_at, updated_at, created_by) FROM stdin;
+364a24bb-5a68-43d0-97a0-c9aab8580bfd	36b6616e-a0f9-4224-89b2-f744dcca9174	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 15:50:27.441693+00	2026-06-15 15:50:27.441693+00	\N
+4b097f81-b2eb-4402-8a2d-b888d09799c3	e934bb2d-0bc6-4d1f-a884-7f8649193733	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 15:50:27.523369+00	2026-06-15 15:50:27.523369+00	\N
+e5bff6ab-489a-438e-95b8-607483df4088	3d1422e6-0ffc-4370-9678-4ee429565578	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 15:50:27.555517+00	2026-06-15 15:50:27.555517+00	\N
+8df2a5e4-e5de-490b-86b2-602eec33a2df	36b6616e-a0f9-4224-89b2-f744dcca9174	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 15:50:28.054764+00	2026-06-15 15:50:28.054764+00	\N
+442bd1d7-16a9-44b9-868b-6c1a1abc03f4	e934bb2d-0bc6-4d1f-a884-7f8649193733	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 15:50:28.116399+00	2026-06-15 15:50:28.116399+00	\N
+48822627-a4cc-4c7f-b583-60691a5f1b1b	3d1422e6-0ffc-4370-9678-4ee429565578	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 15:50:28.160721+00	2026-06-15 15:50:28.160721+00	\N
+ede6269c-b142-4e9f-b03f-5b124a2d844a	36b6616e-a0f9-4224-89b2-f744dcca9174	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 15:50:28.336848+00	2026-06-15 15:50:28.336848+00	\N
+36f28599-44ee-4578-81a7-7f804f6985b5	e934bb2d-0bc6-4d1f-a884-7f8649193733	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 15:50:28.373533+00	2026-06-15 15:50:28.373533+00	\N
+56d01f24-7f96-4876-888d-ded1675db5e2	3d1422e6-0ffc-4370-9678-4ee429565578	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 15:50:28.404734+00	2026-06-15 15:50:28.404734+00	\N
+170a62fd-fe37-448d-8922-da12b6f67eed	feb38818-c5b5-4275-8122-482af5cabff9	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 15:51:57.90683+00	2026-06-15 15:51:57.90683+00	\N
+366ee6d4-803d-447f-a910-e5d2f65da8d0	feb38818-c5b5-4275-8122-482af5cabff9	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:03:31.551987+00	2026-06-15 16:03:31.551987+00	\N
+510c7946-9904-4a1e-94bc-642011a7961f	77f65be3-db67-4a40-8aa7-eca7c8917770	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:03:31.551987+00	2026-06-15 16:03:31.551987+00	\N
+07e1194a-87d0-4bfb-9267-3dd36f775ff9	e8524629-231b-47a9-924c-90c318a566c3	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:03:31.551987+00	2026-06-15 16:03:31.551987+00	\N
+28b50659-e01c-4771-b51b-0c13d3381358	9865055c-ae07-4449-9fa9-393ae8e05984	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:03:57.434243+00	2026-06-15 16:03:57.434243+00	\N
+90512f54-dcfc-4f6e-8109-8f6e1a5a7d22	321c323c-856f-4ffe-a108-6d3dffeffc4d	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:03:57.512846+00	2026-06-15 16:03:57.512846+00	\N
+07f28dca-4c58-40de-8b72-ba58801bce60	1427f0c3-ba2d-4ef2-a865-79b32a844edf	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:03:57.554686+00	2026-06-15 16:03:57.554686+00	\N
+9031aee7-2e1b-485f-8804-e535b8eb0f32	9865055c-ae07-4449-9fa9-393ae8e05984	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:03:58.151013+00	2026-06-15 16:03:58.151013+00	\N
+37ce594a-0acb-45d5-b0f9-63ab742fa222	321c323c-856f-4ffe-a108-6d3dffeffc4d	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:03:58.224351+00	2026-06-15 16:03:58.224351+00	\N
+cfd51e9a-c545-4eb7-912a-a871fbc30883	1427f0c3-ba2d-4ef2-a865-79b32a844edf	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:03:58.26844+00	2026-06-15 16:03:58.26844+00	\N
+77933e11-a42c-4424-9047-a7e0aa827c9b	9865055c-ae07-4449-9fa9-393ae8e05984	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:03:58.45238+00	2026-06-15 16:03:58.45238+00	\N
+bdbd593b-5e20-4b27-9546-8ec56088c945	321c323c-856f-4ffe-a108-6d3dffeffc4d	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:03:58.495277+00	2026-06-15 16:03:58.495277+00	\N
+31807036-40b5-4f15-a20b-f51167eef59a	1427f0c3-ba2d-4ef2-a865-79b32a844edf	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:03:58.5357+00	2026-06-15 16:03:58.5357+00	\N
+8f44b835-def6-4dbe-a86d-e7b23d8a3df7	2de3edd1-5302-4617-82c9-244ddb424b2e	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:26:50.871261+00	2026-06-15 16:26:50.871261+00	\N
+6cd0a172-5eb6-4b5a-8f43-2c63ac55d245	4661cc5f-1c47-4c92-9bb3-9c8b8c2fd8db	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:26:50.871261+00	2026-06-15 16:26:50.871261+00	\N
+b8104947-7867-4ab6-854b-8e6616837562	867bbd1b-110a-470e-8f20-b02bb47529d1	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:26:50.871261+00	2026-06-15 16:26:50.871261+00	\N
+58ba8474-4625-41c9-bdf3-099e9be1fe66	4a0a17aa-fd5a-4a1c-bca8-0788e764aed6	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	9b9f4153-1b16-4704-975c-8090f9e6e301	2026-06-15 16:26:50.871261+00	2026-06-15 16:26:50.871261+00	\N
+0ba86321-7610-4df3-9896-dc60b676ce07	d0dc8e6f-1b06-4d71-8dac-5d5abae4d120	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:43:20.45776+00	2026-06-15 16:43:20.45776+00	\N
+4335f790-c968-4559-8856-beefd0e423ba	d6fd0be7-837c-43b0-9430-27781bf63503	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:43:20.539115+00	2026-06-15 16:43:20.539115+00	\N
+9f5f720f-99d1-4410-97d1-cc72fce46f80	1e0ede6a-53e5-485f-8fca-ca781bdcbda6	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:43:20.571677+00	2026-06-15 16:43:20.571677+00	\N
+9784c2eb-6f42-4206-8992-50e27e66821e	d0dc8e6f-1b06-4d71-8dac-5d5abae4d120	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:43:21.051832+00	2026-06-15 16:43:21.051832+00	\N
+8faa2893-9430-46a9-a789-6eeaad0398de	d6fd0be7-837c-43b0-9430-27781bf63503	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:43:21.112805+00	2026-06-15 16:43:21.112805+00	\N
+b074dc1e-c132-40f2-9070-0d66659935ee	1e0ede6a-53e5-485f-8fca-ca781bdcbda6	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:43:21.145062+00	2026-06-15 16:43:21.145062+00	\N
+d1f44a9a-726f-40f2-8156-e51c050b5518	d0dc8e6f-1b06-4d71-8dac-5d5abae4d120	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:43:21.308159+00	2026-06-15 16:43:21.308159+00	\N
+0e1d383d-92f9-4cb5-907e-c1053bba7d1c	d6fd0be7-837c-43b0-9430-27781bf63503	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:43:21.353342+00	2026-06-15 16:43:21.353342+00	\N
+19b71c24-d246-42a9-9730-d2b80db4500d	1e0ede6a-53e5-485f-8fca-ca781bdcbda6	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:43:21.388009+00	2026-06-15 16:43:21.388009+00	\N
+0dde3709-331d-4469-89e2-46f952ed1dd9	a7abc6ba-6a76-44b3-a913-a0f834112305	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:53:30.394262+00	2026-06-15 16:53:30.394262+00	\N
+653477f1-ec95-4d45-94a0-0676d1a1f8a5	f5d79986-28a7-407b-aed0-1a1748e7ce83	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:53:30.492521+00	2026-06-15 16:53:30.492521+00	\N
+ee8ba5a0-ba29-4bd2-84c1-6e63e3daa158	6ccd2d70-222e-429b-ae44-12fdd922daaf	depot_pad	3fa3d47d-99e0-4ac6-94c1-565354f320eb	391020b3-c3f0-43b6-814f-f1165e33b8fb	2026-06-15 16:53:30.529065+00	2026-06-15 16:53:30.529065+00	\N
+d2cc8636-6dd5-4005-a039-fcf7ebd2cd6b	a7abc6ba-6a76-44b3-a913-a0f834112305	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:53:31.073454+00	2026-06-15 16:53:31.073454+00	\N
+7c140737-e7ce-4b64-bebf-c92c7073c3b6	f5d79986-28a7-407b-aed0-1a1748e7ce83	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:53:31.155409+00	2026-06-15 16:53:31.155409+00	\N
+e8645937-7974-40db-9cf7-29a184a540cb	6ccd2d70-222e-429b-ae44-12fdd922daaf	chargement	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:53:31.210023+00	2026-06-15 16:53:31.210023+00	\N
+d0382182-bf97-4e03-a0f7-0ce2bd1478a0	a7abc6ba-6a76-44b3-a913-a0f834112305	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:53:31.402926+00	2026-06-15 16:53:31.402926+00	\N
+95880cd6-a3da-4f49-b8a6-18a4c9c9fd17	f5d79986-28a7-407b-aed0-1a1748e7ce83	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:53:31.449946+00	2026-06-15 16:53:31.449946+00	\N
+91546ad0-5bd9-47e3-99f4-91c6ad878eec	6ccd2d70-222e-429b-ae44-12fdd922daaf	livraison	5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	\N	2026-06-15 16:53:31.491684+00	2026-06-15 16:53:31.491684+00	\N
 \.
 
 
@@ -1389,13 +2353,31 @@ ab7870a7-5663-4e17-84ea-b4cf6cabb423	80b3ae99-edfc-4220-a471-03c5366fb10d	6e7ffb
 --
 
 COPY public.users (id, email, password_hash, role, nom, adresse, secteur, is_active, created_at, updated_at, created_by, telephone, google_id, oauth_provider, is_email_verified) FROM stdin;
-9f334b50-59fc-4c16-8635-e9f29c46cdf7	admin@dimed.dz	$2b$12$5SLvzbmf6vRCVfke1e4IsuFRar5uk7JpmIjtpGDbRmuUIr6wvNKzO	admin	Administrator	\N	\N	t	2026-03-26 10:08:48.259648+00	2026-03-26 10:08:48.259648+00	\N	\N	\N	local	t
-3fce8dc2-16e0-4ce6-b41c-c0657216eb62	preparateur@dimed.dz	$2b$12$u6ucold4kYgC3l6btprrgOF5qMRsd8ottq62HlzP7u6lU88qMT3AW	preparateur	Preparateur			t	2026-03-26 10:56:38.10231+00	2026-03-30 18:02:43.167792+00	\N	\N	\N	local	t
-aec28fb7-8dfb-4781-b2b0-932d1a9e891d	controleur@dimed.dz	$2b$12$R3THkp6A89M/s43IdkZaR.83AJzFGjqKC5py5I.O3sV6L3OYrt0Fy	controleur	Controleur			t	2026-03-26 10:56:38.10231+00	2026-04-01 13:53:16.766284+00	\N	\N	\N	local	t
-ef6fb6ab-1b1a-41ea-bf5a-658502d156f7	livreur@dimed.dz	$2b$12$bvdw3yUvAKlddqB8wiTDF.9I1kN2GbxWwIsPyheEXx6HGiRP8BhQ6	livreur	Livreur			t	2026-03-26 10:56:38.10231+00	2026-04-01 13:59:36.291782+00	\N	\N	\N	local	t
-64ee5bf2-f92a-48d4-87f4-e6aff7d163ec	benamara.hicham.2003@gmail.com	$2b$12$cLvDS5ScIh975eptBSg23eiBXE2EG6rtZ92nXxbxxqa82TU.y2G0y	admin	Hicham Benamara	\N	\N	t	2026-04-07 11:48:44.494156+00	2026-04-07 11:48:44.494156+00	\N	\N	\N	local	t
-80b3ae99-edfc-4220-a471-03c5366fb10d	pharmacien@dimed.dz	$2b$12$B6GxGTni7xNUulE77EIoHewz5Kjx6SaMC2kwoiey2U5efx3Odii0i	pharmacien	Pharmacie 1	Rue des Frères Bouadou, Bir Mourad Rais, Alger	Alger Centre	t	2026-03-26 10:56:38.10231+00	2026-04-01 12:55:59.354216+00	\N	+213 21 54 78 90	\N	local	t
-5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	operatrice@dimed.dz	$2b$12$PLcGHPtUIxtKimUdmoJB1unPNeb7lZvvTKoL548rPvtS6eb4lDZ/6	operatrice	Fatima Operatrice	\N	\N	t	2026-03-26 10:56:38.10231+00	2026-03-26 10:56:38.10231+00	\N	+213 21 54 79 01	\N	local	t
+3fa3d47d-99e0-4ac6-94c1-565354f320eb	magasinier@dimed.dz	$2b$12$IDMgDZxZ5PyTlRpLnOrqAuNN8FD0cvk83jksF5FGuvgxlkkfRofDy	magasinier	Magasinier Demo	\N	\N	t	2026-06-15 15:49:18.853118+00	2026-06-15 15:49:18.853118+00	\N	\N	\N	\N	t
+9f334b50-59fc-4c16-8635-e9f29c46cdf7	admin@dimed.dz	$2b$12$3p4nwG4e651Mo4DemyiPouvvGZShNHa0hOVbI10EAUqHi43vm4yNS	admin	Administrator	\N	\N	t	2026-03-26 10:08:48.259648+00	2026-03-26 10:08:48.259648+00	\N	\N	\N	local	t
+3fce8dc2-16e0-4ce6-b41c-c0657216eb62	preparateur@dimed.dz	$2b$12$3p4nwG4e651Mo4DemyiPouvvGZShNHa0hOVbI10EAUqHi43vm4yNS	preparateur	Preparateur			t	2026-03-26 10:56:38.10231+00	2026-03-30 18:02:43.167792+00	\N	\N	\N	local	t
+aec28fb7-8dfb-4781-b2b0-932d1a9e891d	controleur@dimed.dz	$2b$12$3p4nwG4e651Mo4DemyiPouvvGZShNHa0hOVbI10EAUqHi43vm4yNS	controleur	Controleur			t	2026-03-26 10:56:38.10231+00	2026-04-01 13:53:16.766284+00	\N	\N	\N	local	t
+ef6fb6ab-1b1a-41ea-bf5a-658502d156f7	livreur@dimed.dz	$2b$12$3p4nwG4e651Mo4DemyiPouvvGZShNHa0hOVbI10EAUqHi43vm4yNS	livreur	Livreur			t	2026-03-26 10:56:38.10231+00	2026-04-01 13:59:36.291782+00	\N	\N	\N	local	t
+64ee5bf2-f92a-48d4-87f4-e6aff7d163ec	benamara.hicham.2003@gmail.com	$2b$12$3p4nwG4e651Mo4DemyiPouvvGZShNHa0hOVbI10EAUqHi43vm4yNS	admin	Hicham Benamara	\N	\N	t	2026-04-07 11:48:44.494156+00	2026-04-07 11:48:44.494156+00	\N	\N	\N	local	t
+80b3ae99-edfc-4220-a471-03c5366fb10d	pharmacien@dimed.dz	$2b$12$3p4nwG4e651Mo4DemyiPouvvGZShNHa0hOVbI10EAUqHi43vm4yNS	pharmacien	Pharmacie 1	Rue des Frères Bouadou, Bir Mourad Rais, Alger	Alger Centre	t	2026-03-26 10:56:38.10231+00	2026-04-01 12:55:59.354216+00	\N	+213 21 54 78 90	\N	local	t
+5c6eb7bc-b7e6-48b9-a2be-749e3b1c2dcb	operatrice@dimed.dz	$2b$12$3p4nwG4e651Mo4DemyiPouvvGZShNHa0hOVbI10EAUqHi43vm4yNS	operatrice	Fatima Operatrice	\N	\N	t	2026-03-26 10:56:38.10231+00	2026-03-26 10:56:38.10231+00	\N	+213 21 54 79 01	\N	local	t
+6d4d8a0c-d618-4646-867d-4b833a795014	facturier@dimed.dz	$2b$12$lqv9.1u2qZl/B.el2rNXueLXPElbem5r9.s/UJ.8JnhWRmBX3BV46	facturier	Facturier Demo	\N	\N	t	2026-06-15 16:52:39.014428+00	2026-06-15 16:52:39.014428+00	\N	\N	\N	\N	t
+bd50ef77-a84a-4aaf-9cbe-4cfeb883046f	livreur1@dimed.dz	$2b$12$KwGueGaU.7e6jQvNM4kDpOQ3v57fILqiHZDUuKFakj2Ps25450LY6	livreur	Livreur 1	\N	\N	t	2026-06-15 16:52:39.014428+00	2026-06-15 16:52:39.014428+00	\N	\N	\N	\N	t
+7d837426-095a-4af0-a2e4-7f83a7872bd6	livreur2@dimed.dz	$2b$12$VrumNs/4w7OSDY9KYpHpzOmcxNE9Krqtbgl2w6Lxnn8OskUQ.7cte	livreur	Livreur 2	\N	\N	t	2026-06-15 16:52:39.014428+00	2026-06-15 16:52:39.014428+00	\N	\N	\N	\N	t
+acd6c8b9-f2a7-4901-a7d9-5f4e3805a44e	livreur3@dimed.dz	$2b$12$t8CLQ0ipIPMlltW3MtLdg.RSi/EfyrE84iRl1XSWGmBfv7aRNQSLG	livreur	Livreur 3	\N	\N	t	2026-06-15 16:52:39.014428+00	2026-06-15 16:52:39.014428+00	\N	\N	\N	\N	t
+a93c5e03-80cd-462a-87dc-e0477d944ca8	livreur4@dimed.dz	$2b$12$Qa/I0d.5Oy7MI6sqAR91suklY1cgiEGih37p/wEAnS9asevdasIVy	livreur	Livreur 4	\N	\N	t	2026-06-15 16:52:39.014428+00	2026-06-15 16:52:39.014428+00	\N	\N	\N	\N	t
+04a7282f-79fb-4fe7-9523-990906e768ce	livreur5@dimed.dz	$2b$12$nzrHwf/fhbDkB8JhhVjNvOAKtVOSxLgxpm7mSBbz2kLynqZ0Wg9Wy	livreur	Livreur 5	\N	\N	t	2026-06-15 16:52:39.014428+00	2026-06-15 16:52:39.014428+00	\N	\N	\N	\N	t
+ed617636-c060-40c0-81a4-ef2a31ca4f74	livreur6@dimed.dz	$2b$12$zPCN/FbE7Qd1prsdbnGG1ewEzsA3QVo1zmjhEl3p.swmEQqyjbXgG	livreur	Livreur 6	\N	\N	t	2026-06-15 16:52:39.014428+00	2026-06-15 16:52:39.014428+00	\N	\N	\N	\N	t
+4cc324b0-8cd9-4d3f-b58f-766c28b1cfdf	livreur7@dimed.dz	$2b$12$tZkjiKOcf2i6ssbfVj0t2.bwiFkmP/8dFtneYgwMTgWxSO5G7esLi	livreur	Livreur 7	\N	\N	t	2026-06-15 16:52:39.014428+00	2026-06-15 16:52:39.014428+00	\N	\N	\N	\N	t
+c2f4b76f-21f4-4c4e-9c0f-a0a3f9b8d981	livreur8@dimed.dz	$2b$12$eSHCr0tv2GUKLj86q9Nee.ca8SxMeSVjGw1NB.i2i.aUuSsFuIg0W	livreur	Livreur 8	\N	\N	t	2026-06-15 16:52:39.014428+00	2026-06-15 16:52:39.014428+00	\N	\N	\N	\N	t
+\.
+
+
+--
+-- Data for Name: vignettes; Type: TABLE DATA; Schema: public; Owner: dimed
+--
+
+COPY public.vignettes (id, commande_id, ligne_id, filename, extracted_exp, extracted_raw, uploaded_by, created_at, updated_at, created_by, extracted_lot, extracted_fab, extracted_ppa, extracted_designation) FROM stdin;
 \.
 
 
@@ -1403,21 +2385,28 @@ ef6fb6ab-1b1a-41ea-bf5a-658502d156f7	livreur@dimed.dz	$2b$12$bvdw3yUvAKlddqB8wiT
 -- Name: bl_seq; Type: SEQUENCE SET; Schema: public; Owner: dimed
 --
 
-SELECT pg_catalog.setval('public.bl_seq', 19, true);
+SELECT pg_catalog.setval('public.bl_seq', 38, true);
+
+
+--
+-- Name: colis_seq; Type: SEQUENCE SET; Schema: public; Owner: dimed
+--
+
+SELECT pg_catalog.setval('public.colis_seq', 21, true);
 
 
 --
 -- Name: commande_seq; Type: SEQUENCE SET; Schema: public; Owner: dimed
 --
 
-SELECT pg_catalog.setval('public.commande_seq', 32, true);
+SELECT pg_catalog.setval('public.commande_seq', 71, true);
 
 
 --
 -- Name: facture_seq; Type: SEQUENCE SET; Schema: public; Owner: dimed
 --
 
-SELECT pg_catalog.setval('public.facture_seq', 19, true);
+SELECT pg_catalog.setval('public.facture_seq', 38, true);
 
 
 --
@@ -1508,6 +2497,22 @@ ALTER TABLE ONLY public.camions
 
 
 --
+-- Name: colis_lignes colis_lignes_pkey; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.colis_lignes
+    ADD CONSTRAINT colis_lignes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: colis colis_pkey; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.colis
+    ADD CONSTRAINT colis_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: commandes commandes_pkey; Type: CONSTRAINT; Schema: public; Owner: dimed
 --
 
@@ -1521,6 +2526,22 @@ ALTER TABLE ONLY public.commandes
 
 ALTER TABLE ONLY public.commandes
     ADD CONSTRAINT commandes_reference_id_key UNIQUE (reference_id);
+
+
+--
+-- Name: creances creances_facture_id_key; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.creances
+    ADD CONSTRAINT creances_facture_id_key UNIQUE (facture_id);
+
+
+--
+-- Name: creances creances_pkey; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.creances
+    ADD CONSTRAINT creances_pkey PRIMARY KEY (id);
 
 
 --
@@ -1580,6 +2601,62 @@ ALTER TABLE ONLY public.notifications
 
 
 --
+-- Name: pads_tir pads_tir_code_key; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.pads_tir
+    ADD CONSTRAINT pads_tir_code_key UNIQUE (code);
+
+
+--
+-- Name: pads_tir pads_tir_pkey; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.pads_tir
+    ADD CONSTRAINT pads_tir_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reclamations reclamations_pkey; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.reclamations
+    ADD CONSTRAINT reclamations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: scans_colis scans_colis_pkey; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.scans_colis
+    ADD CONSTRAINT scans_colis_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: colis uq_colis_commande_index; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.colis
+    ADD CONSTRAINT uq_colis_commande_index UNIQUE (commande_id, index_colis);
+
+
+--
+-- Name: colis_lignes uq_colis_lignes_colis_ligne; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.colis_lignes
+    ADD CONSTRAINT uq_colis_lignes_colis_ligne UNIQUE (colis_id, ligne_commande_id);
+
+
+--
+-- Name: colis uq_colis_numero; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.colis
+    ADD CONSTRAINT uq_colis_numero UNIQUE (numero);
+
+
+--
 -- Name: feuilles_route uq_feuilles_route_camion_date; Type: CONSTRAINT; Schema: public; Owner: dimed
 --
 
@@ -1596,6 +2673,14 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: vignettes uq_vignettes_ligne_id; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.vignettes
+    ADD CONSTRAINT uq_vignettes_ligne_id UNIQUE (ligne_id);
+
+
+--
 -- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: dimed
 --
 
@@ -1609,6 +2694,14 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: vignettes vignettes_pkey; Type: CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.vignettes
+    ADD CONSTRAINT vignettes_pkey PRIMARY KEY (id);
 
 
 --
@@ -1668,6 +2761,27 @@ CREATE INDEX ix_caddies_pool_is_available ON public.caddies_pool USING btree (is
 
 
 --
+-- Name: ix_colis_commande_id; Type: INDEX; Schema: public; Owner: dimed
+--
+
+CREATE INDEX ix_colis_commande_id ON public.colis USING btree (commande_id);
+
+
+--
+-- Name: ix_colis_lignes_colis_id; Type: INDEX; Schema: public; Owner: dimed
+--
+
+CREATE INDEX ix_colis_lignes_colis_id ON public.colis_lignes USING btree (colis_id);
+
+
+--
+-- Name: ix_colis_numero; Type: INDEX; Schema: public; Owner: dimed
+--
+
+CREATE INDEX ix_colis_numero ON public.colis USING btree (numero);
+
+
+--
 -- Name: ix_commandes_preparateur_id; Type: INDEX; Schema: public; Owner: dimed
 --
 
@@ -1696,6 +2810,13 @@ CREATE INDEX ix_notifications_user_unread ON public.notifications USING btree (u
 
 
 --
+-- Name: ix_scans_colis_colis_id; Type: INDEX; Schema: public; Owner: dimed
+--
+
+CREATE INDEX ix_scans_colis_colis_id ON public.scans_colis USING btree (colis_id);
+
+
+--
 -- Name: ix_users_email; Type: INDEX; Schema: public; Owner: dimed
 --
 
@@ -1707,6 +2828,20 @@ CREATE INDEX ix_users_email ON public.users USING btree (email);
 --
 
 CREATE INDEX ix_users_google_id ON public.users USING btree (google_id);
+
+
+--
+-- Name: ix_vignettes_commande_id; Type: INDEX; Schema: public; Owner: dimed
+--
+
+CREATE INDEX ix_vignettes_commande_id ON public.vignettes USING btree (commande_id);
+
+
+--
+-- Name: ix_vignettes_ligne_id; Type: INDEX; Schema: public; Owner: dimed
+--
+
+CREATE INDEX ix_vignettes_ligne_id ON public.vignettes USING btree (ligne_id);
 
 
 --
@@ -1742,6 +2877,38 @@ ALTER TABLE ONLY public.caddies_pool
 
 
 --
+-- Name: colis colis_commande_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.colis
+    ADD CONSTRAINT colis_commande_id_fkey FOREIGN KEY (commande_id) REFERENCES public.commandes(id);
+
+
+--
+-- Name: colis_lignes colis_lignes_colis_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.colis_lignes
+    ADD CONSTRAINT colis_lignes_colis_id_fkey FOREIGN KEY (colis_id) REFERENCES public.colis(id);
+
+
+--
+-- Name: colis_lignes colis_lignes_ligne_commande_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.colis_lignes
+    ADD CONSTRAINT colis_lignes_ligne_commande_id_fkey FOREIGN KEY (ligne_commande_id) REFERENCES public.lignes_commande(id);
+
+
+--
+-- Name: colis colis_pad_tir_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.colis
+    ADD CONSTRAINT colis_pad_tir_id_fkey FOREIGN KEY (pad_tir_id) REFERENCES public.pads_tir(id);
+
+
+--
 -- Name: commandes commandes_operatrice_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
 --
 
@@ -1755,6 +2922,30 @@ ALTER TABLE ONLY public.commandes
 
 ALTER TABLE ONLY public.commandes
     ADD CONSTRAINT commandes_pharmacien_id_fkey FOREIGN KEY (pharmacien_id) REFERENCES public.users(id);
+
+
+--
+-- Name: creances creances_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.creances
+    ADD CONSTRAINT creances_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: creances creances_facture_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.creances
+    ADD CONSTRAINT creances_facture_id_fkey FOREIGN KEY (facture_id) REFERENCES public.factures(id) ON DELETE CASCADE;
+
+
+--
+-- Name: creances creances_pharmacien_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.creances
+    ADD CONSTRAINT creances_pharmacien_id_fkey FOREIGN KEY (pharmacien_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -1838,8 +3029,80 @@ ALTER TABLE ONLY public.notifications
 
 
 --
+-- Name: reclamations reclamations_commande_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.reclamations
+    ADD CONSTRAINT reclamations_commande_id_fkey FOREIGN KEY (commande_id) REFERENCES public.commandes(id) ON DELETE CASCADE;
+
+
+--
+-- Name: reclamations reclamations_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.reclamations
+    ADD CONSTRAINT reclamations_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: reclamations reclamations_pharmacien_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.reclamations
+    ADD CONSTRAINT reclamations_pharmacien_id_fkey FOREIGN KEY (pharmacien_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: scans_colis scans_colis_colis_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.scans_colis
+    ADD CONSTRAINT scans_colis_colis_id_fkey FOREIGN KEY (colis_id) REFERENCES public.colis(id);
+
+
+--
+-- Name: scans_colis scans_colis_pad_tir_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.scans_colis
+    ADD CONSTRAINT scans_colis_pad_tir_id_fkey FOREIGN KEY (pad_tir_id) REFERENCES public.pads_tir(id);
+
+
+--
+-- Name: scans_colis scans_colis_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.scans_colis
+    ADD CONSTRAINT scans_colis_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: vignettes vignettes_commande_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.vignettes
+    ADD CONSTRAINT vignettes_commande_id_fkey FOREIGN KEY (commande_id) REFERENCES public.commandes(id) ON DELETE CASCADE;
+
+
+--
+-- Name: vignettes vignettes_ligne_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.vignettes
+    ADD CONSTRAINT vignettes_ligne_id_fkey FOREIGN KEY (ligne_id) REFERENCES public.lignes_commande(id) ON DELETE SET NULL;
+
+
+--
+-- Name: vignettes vignettes_uploaded_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: dimed
+--
+
+ALTER TABLE ONLY public.vignettes
+    ADD CONSTRAINT vignettes_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
-\unrestrict IDaQupgWiqwdry0Vlpqz4AqxJ8DzfeC4iqaYmOsDx5n4aBUz30wgM1Ik8o05kyF
+\unrestrict DwISst4P4d9m0SaV0cEJgkOKbioLDT0pIlGTMl0Nli1XG2p6CkuifjjhBbSV4mx
 

@@ -1356,6 +1356,7 @@ def generate_etiquettes_pdf(
     client_secteur: str | None,
     date_str: str,
     colis: list[dict],
+    controleur_nom: str | None = None,
 ) -> Path:
     """Generate parcel labels PDF: one A6 landscape page per parcel.
 
@@ -1453,6 +1454,9 @@ def generate_etiquettes_pdf(
         left_cell.append(Spacer(1, 1.5 * mm))
         left_cell.append(Paragraph(contenu_title, label_style))
         left_cell.extend(contenu_flow)
+        if controleur_nom:
+            left_cell.append(Spacer(1, 1.5 * mm))
+            left_cell.append(Paragraph(f"Contrôlé par : <b>{controleur_nom}</b>", value_style))
 
         right_cell = [
             qr_img,

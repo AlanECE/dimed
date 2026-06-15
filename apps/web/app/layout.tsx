@@ -24,7 +24,11 @@ export default function RootLayout({
 	children: React.ReactNode;
 }) {
 	return (
-		<html lang="fr" className={cn("font-sans antialiased", sora.variable, inter.variable)}>
+		<html
+			lang="fr"
+			className={cn("font-sans antialiased", sora.variable, inter.variable)}
+			suppressHydrationWarning
+		>
 			<body>
 				<GoogleAuthProvider>
 					<AuthProvider>

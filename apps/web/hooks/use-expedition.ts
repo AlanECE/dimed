@@ -26,6 +26,20 @@ export function useExpedition() {
 		);
 	}, []);
 
+	const deposePadCommande = useCallback(async (commandeId: string, padTirId: string) => {
+		return fetchApi<{
+			status: string;
+			commande_ref: string | null;
+			pad: { id: string; code: string; nom: string };
+			nb_colis: number;
+			deposes: string[];
+			ignores: string[];
+		}>(`/expedition/commandes/${encodeURIComponent(commandeId)}/depose-pad`, {
+			method: "POST",
+			body: JSON.stringify({ pad_tir_id: padTirId }),
+		});
+	}, []);
+
 	const fetchPads = useCallback(async () => {
 		const data = await fetchApi<{ pads: PadOccupation[]; total: number }>("/expedition/pads");
 		return data.pads;
@@ -76,6 +90,7 @@ export function useExpedition() {
 	return {
 		lookupColis,
 		deposePad,
+		deposePadCommande,
 		fetchPads,
 		scanChargement,
 		scanLivraison,

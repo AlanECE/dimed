@@ -141,7 +141,9 @@ def colis_contenu(colis: Colis) -> tuple[list[dict], bool]:
         [
             {
                 "designation": ln.designation,
-                "quantite": ln.qte_prelevee if ln.qte_prelevee is not None else ln.qte_demandee,
+                # qte_prelevee peut être 0/None si non renseignée → on retombe
+                # sur la quantité demandée pour ne jamais afficher 0.
+                "quantite": ln.qte_prelevee or ln.qte_demandee,
             }
             for ln in lignes
         ],
