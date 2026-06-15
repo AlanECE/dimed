@@ -31,9 +31,16 @@ def _serialize_value(key: str, value, mapper) -> str:
 
 
 def _serialize_attrs(obj) -> dict:
-    mapper = inspect(obj).mapper
+    insp = inspect(obj)
+    mapper = insp.mapper
+    # Skip attributes that aren't loaded (e.g. columns deferred via load_only):
+    # reading them on a just-deleted object would trigger a lazy reload of a row
+    # that no longer exists (ObjectDeletedError) inside the after_flush listener.
+    unloaded = insp.unloaded
     return {
-        c.key: _serialize_value(c.key, getattr(obj, c.key), mapper) for c in mapper.column_attrs
+        c.key: _serialize_value(c.key, getattr(obj, c.key), mapper)
+        for c in mapper.column_attrs
+        if c.key not in unloaded
     }
 
 

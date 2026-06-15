@@ -21,6 +21,7 @@ from app.commandes.schemas import (
     EditLineRequest,
     OrderDetailResponse,
     OrderResponse,
+    RefuseSaisieRequest,
     StartPreparationRequest,
     UpdateCommentRequest,
 )
@@ -42,6 +43,7 @@ from app.models.camion import Camion
 from app.models.commande import Commande, LigneCommande, OrderStatus
 from app.models.document import Facture, FeuilleDeRoute
 from app.models.medicament import Medicament
+from app.models.notification import Notification
 from app.models.user import User
 
 # Statuses visible per workflow role
@@ -553,6 +555,57 @@ async def reject_order(
     return OrderDetailResponse(**data)
 
 
+@router.patch("/{commande_id}/refuse")
+async def refuse_saisie(
+    commande_id: UUID,
+    body: RefuseSaisieRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> OrderDetailResponse:
+    """Operatrice refuses a pending saisie: the order stays CREEE, the reason is
+    recorded in operatrice_comment and the pharmacien is notified so they can
+    correct and resubmit (no terminal cancellation)."""
+    if current_user.role.value not in ("operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operatrice/admin only")
+
+    commande = await get_order_with_lines(db, commande_id)
+    if not commande:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if commande.statut != OrderStatus.CREEE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Seule une saisie en attente de validation peut etre refusee "
+                f"(statut {commande.statut.value})."
+            ),
+        )
+
+    db.info["actor_id"] = str(current_user.id)
+    commande.operatrice_comment = body.motif
+    db.add(
+        Notification(
+            id=uuid4(),
+            user_id=commande.pharmacien_id,
+            commande_id=commande.id,
+            type="refusee",
+            message=f"Commande {commande.reference_id} refusee : {body.motif}",
+        )
+    )
+    await db.commit()
+    await db.refresh(commande, ["lignes"])
+
+    pharm_result = await db.execute(select(User).where(User.id == commande.pharmacien_id))
+    pharmacien = pharm_result.scalar_one_or_none()
+
+    data = _enrich_order(
+        commande,
+        pharmacien,
+        None,
+        viewer_role=current_user.role.value,
+    )
+    return OrderDetailResponse(**data)
+
+
 @router.patch("/{commande_id}/cancel")
 async def cancel_order(
     commande_id: UUID,
@@ -593,15 +646,37 @@ def _require_operatrice_or_admin(current_user: User) -> None:
         )
 
 
-def _require_editable(commande: Commande) -> None:
-    if commande.statut not in _OPERATRICE_EDITABLE_STATUSES:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Commande non modifiable dans son statut actuel "
-                f"({commande.statut.value}). Edition autorisee en CREEE ou ACCEPTEE uniquement."
-            ),
-        )
+def _require_line_edit_access(commande: Commande, current_user: User) -> None:
+    """Gate line add/edit/delete on an order.
+
+    - operatrice/admin: editable while CREEE or ACCEPTEE (stock adjustment and
+      facture regeneration are handled downstream for ACCEPTEE).
+    - pharmacien: only the order's owner, and only while it is still CREEE (not yet
+      validated by an operatrice). Any attempt after validation is rejected (409).
+    """
+    role = current_user.role.value
+    if role in ("operatrice", "admin"):
+        if commande.statut not in _OPERATRICE_EDITABLE_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Commande non modifiable dans son statut actuel "
+                    f"({commande.statut.value}). Edition autorisee en CREEE ou ACCEPTEE uniquement."
+                ),
+            )
+    elif role == "pharmacien":
+        if commande.pharmacien_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your order")
+        if commande.statut != OrderStatus.CREEE:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Commande deja validee : modification impossible "
+                    f"(statut {commande.statut.value})."
+                ),
+            )
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 async def _load_facture_for_commande(db: AsyncSession, commande_id: UUID) -> Facture | None:
@@ -678,12 +753,10 @@ async def edit_operatrice_line(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> OrderDetailResponse:
-    _require_operatrice_or_admin(current_user)
-
     commande = await get_order_with_lines(db, commande_id)
     if not commande:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    _require_editable(commande)
+    _require_line_edit_access(commande, current_user)
 
     ligne = next((ln for ln in commande.lignes if ln.id == ligne_id), None)
     if ligne is None:
@@ -722,12 +795,10 @@ async def add_operatrice_line(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> OrderDetailResponse:
-    _require_operatrice_or_admin(current_user)
-
     commande = await get_order_with_lines(db, commande_id)
     if not commande:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    _require_editable(commande)
+    _require_line_edit_access(commande, current_user)
 
     med_result = await db.execute(select(Medicament).where(Medicament.id == body.medicament_id))
     med = med_result.scalar_one_or_none()
@@ -766,17 +837,15 @@ async def delete_operatrice_line(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> OrderDetailResponse:
-    _require_operatrice_or_admin(current_user)
-
     commande = await get_order_with_lines(db, commande_id)
     if not commande:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    _require_editable(commande)
+    _require_line_edit_access(commande, current_user)
 
     if len(commande.lignes) <= 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Derniere ligne : utilisez /reject pour annuler la commande",
+            detail="Derniere ligne : annulez la commande au lieu de la supprimer",
         )
 
     ligne = next((ln for ln in commande.lignes if ln.id == ligne_id), None)

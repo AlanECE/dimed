@@ -47,7 +47,8 @@ export default function OperatorOrderDetailPage() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [accepting, setAccepting] = useState(false);
-	const [rejecting, setRejecting] = useState(false);
+	const [refusing, setRefusing] = useState(false);
+	const [refuseMotif, setRefuseMotif] = useState("");
 	const [camions, setCamions] = useState<CamionOption[]>([]);
 	const [assigning, setAssigning] = useState(false);
 	const { updateComment, editLine, addLine, removeLine, loading: editLoading } = useOperatorEdit();
@@ -101,16 +102,22 @@ export default function OperatorOrderDetailPage() {
 		}
 	}
 
-	async function handleReject() {
-		setRejecting(true);
+	async function handleRefuse() {
+		const motif = refuseMotif.trim();
+		if (!motif) return;
+		setRefusing(true);
 		try {
-			await fetchApi(`/commandes/${id}/reject`, { method: "PATCH" });
-			toast.success("Commande rejetée");
+			await fetchApi(`/commandes/${id}/refuse`, {
+				method: "PATCH",
+				body: JSON.stringify({ motif }),
+			});
+			toast.success("Saisie refusée — renvoyée au pharmacien");
+			setRefuseMotif("");
 			fetchOrder();
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Erreur");
 		} finally {
-			setRejecting(false);
+			setRefusing(false);
 		}
 	}
 
@@ -462,24 +469,33 @@ export default function OperatorOrderDetailPage() {
 					<AlertDialog>
 						<AlertDialogTrigger className="inline-flex items-center gap-2 rounded-md border border-destructive px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10">
 							<XCircle className="h-4 w-4" />
-							Rejeter
+							Refuser
 						</AlertDialogTrigger>
 						<AlertDialogContent>
 							<AlertDialogHeader>
-								<AlertDialogTitle>Rejeter la commande</AlertDialogTitle>
+								<AlertDialogTitle>Refuser la saisie</AlertDialogTitle>
 								<AlertDialogDescription>
-									Cette commande sera annulée. Voulez-vous continuer ?
+									La commande reste en saisie et est renvoyée au pharmacien pour correction.
+									Indiquez le motif du refus (visible par le pharmacien).
 								</AlertDialogDescription>
 							</AlertDialogHeader>
+							<textarea
+								value={refuseMotif}
+								onChange={(e) => setRefuseMotif(e.target.value)}
+								placeholder="Motif du refus (obligatoire, 500 caractères max)"
+								maxLength={500}
+								rows={3}
+								className="min-h-[80px] w-full rounded-md border border-border/60 bg-card px-3 py-2 text-[13px] shadow-sm transition-colors placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+							/>
 							<AlertDialogFooter>
-								<AlertDialogCancel disabled={rejecting}>Non, garder</AlertDialogCancel>
+								<AlertDialogCancel disabled={refusing}>Annuler</AlertDialogCancel>
 								<AlertDialogAction
-									onClick={handleReject}
-									disabled={rejecting}
+									onClick={handleRefuse}
+									disabled={refusing || !refuseMotif.trim()}
 									className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 								>
-									{rejecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-									Oui, rejeter
+									{refusing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+									Confirmer le refus
 								</AlertDialogAction>
 							</AlertDialogFooter>
 						</AlertDialogContent>

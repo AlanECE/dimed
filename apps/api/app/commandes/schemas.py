@@ -96,6 +96,10 @@ class UpdateCommentRequest(BaseModel):
     comment: str | None = Field(default=None, max_length=500)
 
 
+class RefuseSaisieRequest(BaseModel):
+    motif: str = Field(min_length=1, max_length=500)
+
+
 # ---- Per-ligne OCR (vignette scan) ----
 
 
