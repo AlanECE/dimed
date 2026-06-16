@@ -13,34 +13,25 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useExpedition } from "@/hooks/use-expedition";
-import type { ColisDetail, PadOccupation } from "@/lib/types";
+import type { ColisDetail, ZoneExpeditionCommande } from "@/lib/types";
 import {
-	AlertTriangle,
 	CheckCircle2,
 	CircleDashed,
-	Grid3x3,
 	Loader2,
-	MapPin,
 	Package,
 	PackageCheck,
 	RotateCcw,
 	ScanLine,
+	Truck,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 const COLIS_STATUT_LABELS: Record<string, string> = {
 	etiquete: "Étiqueté",
-	sur_pad: "Sur pad",
+	sur_pad: "En zone d'expédition",
 	charge: "Chargé",
 	livre: "Livré",
 };
@@ -55,7 +46,6 @@ interface ActiveCommande {
 	pharmacien_adresse: string | null;
 	pharmacien_secteur: string | null;
 	nb_colis: number;
-	pad_suggere: ColisDetail["pad_suggere"];
 	colis: ColisDetail[];
 }
 
@@ -69,20 +59,18 @@ function aggregateFrom(detail: ColisDetail): ActiveCommande {
 		pharmacien_adresse: detail.pharmacien_adresse,
 		pharmacien_secteur: detail.pharmacien_secteur,
 		nb_colis: detail.nb_colis,
-		pad_suggere: detail.pad_suggere,
 		colis: [detail],
 	};
 }
 
 export default function MagasinierPage() {
-	const { lookupColis, deposePadCommande, fetchPads } = useExpedition();
+	const { lookupColis, deposeZoneExpedition, fetchZoneExpedition } = useExpedition();
 
 	const [commande, setCommande] = useState<ActiveCommande | null>(null);
 	const [lookupLoading, setLookupLoading] = useState(false);
-	const [selectedPadId, setSelectedPadId] = useState<string>("");
 	const [saving, setSaving] = useState(false);
-	const [pads, setPads] = useState<PadOccupation[] | null>(null);
-	const [padsLoading, setPadsLoading] = useState(true);
+	const [zone, setZone] = useState<ZoneExpeditionCommande[] | null>(null);
+	const [zoneLoading, setZoneLoading] = useState(true);
 
 	// Colis scanné appartenant à une AUTRE commande alors qu'une est en cours.
 	const [conflict, setConflict] = useState<ColisDetail | null>(null);
@@ -92,32 +80,29 @@ export default function MagasinierPage() {
 	const scannedCount = commande?.colis.length ?? 0;
 	const isComplete = !!commande && scannedCount >= commande.nb_colis;
 
-	const refreshPads = useCallback(async () => {
-		setPadsLoading(true);
+	const refreshZone = useCallback(async () => {
+		setZoneLoading(true);
 		try {
-			setPads(await fetchPads());
+			setZone(await fetchZoneExpedition());
 		} catch {
-			// silencieux : la grille des pads est secondaire par rapport au scan
+			// silencieux : la liste de la zone est secondaire par rapport au scan
 		} finally {
-			setPadsLoading(false);
+			setZoneLoading(false);
 		}
-	}, [fetchPads]);
+	}, [fetchZoneExpedition]);
 
 	useEffect(() => {
-		refreshPads();
-	}, [refreshPads]);
+		refreshZone();
+	}, [refreshZone]);
 
 	const resetCommande = useCallback(() => {
 		setCommande(null);
-		setSelectedPadId("");
 		setConflict(null);
 		setAskLeave(false);
 	}, []);
 
 	const startCommande = useCallback((detail: ColisDetail) => {
-		const agg = aggregateFrom(detail);
-		setCommande(agg);
-		setSelectedPadId(agg.pad_suggere?.id ?? "");
+		setCommande(aggregateFrom(detail));
 	}, []);
 
 	const handleScan = useCallback(
@@ -134,31 +119,29 @@ export default function MagasinierPage() {
 					return;
 				}
 
-				// Aucune commande en cours → on démarre avec ce colis.
 				if (!commande) {
 					startCommande(detail);
 					toast.success(`Colis 1 / ${detail.nb_colis} — commande ${detail.commande_ref}`);
 					return;
 				}
 
-				// Colis d'une autre commande → on demande quoi faire.
 				if (detail.commande_id !== commande.commande_id) {
 					setConflict(detail);
 					return;
 				}
 
-				// Déjà scanné dans la commande en cours.
 				if (commande.colis.some((k) => k.numero === detail.numero)) {
 					toast.info(`Colis ${detail.numero} déjà scanné (${scannedCount} / ${commande.nb_colis})`);
 					return;
 				}
 
-				// Ajout à la commande en cours.
 				const next = { ...commande, colis: [...commande.colis, detail] };
 				setCommande(next);
 				const count = next.colis.length;
 				if (count >= next.nb_colis) {
-					toast.success(`Tous les colis scannés (${count} / ${next.nb_colis}) — choisir le pad`);
+					toast.success(
+						`Tous les cartons scannés (${count} / ${next.nb_colis}) — déposer en zone d'expédition`,
+					);
 				} else {
 					toast.success(`Colis ${count} / ${next.nb_colis}`);
 				}
@@ -171,24 +154,23 @@ export default function MagasinierPage() {
 		[commande, lookupColis, lookupLoading, saving, scannedCount, startCommande],
 	);
 
-	const handleAffecter = useCallback(async () => {
-		if (!commande || !selectedPadId || !isComplete) return;
+	const handleDeposer = useCallback(async () => {
+		if (!commande || !isComplete) return;
 		setSaving(true);
 		try {
-			const res = await deposePadCommande(commande.commande_id, selectedPadId);
+			const res = await deposeZoneExpedition(commande.commande_id);
 			toast.success(
-				`Commande ${res.commande_ref ?? commande.commande_ref} déposée sur ${res.pad.code} (${res.deposes.length} colis)`,
+				`Commande ${res.commande_ref ?? commande.commande_ref} déposée en zone d'expédition (${res.deposes.length} cartons)`,
 			);
 			resetCommande();
-			refreshPads();
+			refreshZone();
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Erreur lors de l'affectation");
+			toast.error(err instanceof Error ? err.message : "Erreur lors du dépôt");
 		} finally {
 			setSaving(false);
 		}
-	}, [commande, selectedPadId, isComplete, deposePadCommande, resetCommande, refreshPads]);
+	}, [commande, isComplete, deposeZoneExpedition, resetCommande, refreshZone]);
 
-	// Bascule vers la commande du colis en conflit (abandon de la commande en cours).
 	const switchToConflict = useCallback(() => {
 		if (!conflict) return;
 		startCommande(conflict);
@@ -196,11 +178,6 @@ export default function MagasinierPage() {
 		setConflict(null);
 	}, [conflict, startCommande]);
 
-	const padSuggereCode = commande?.pad_suggere?.code;
-	const overriding =
-		!!commande?.pad_suggere && !!selectedPadId && selectedPadId !== commande.pad_suggere.id;
-
-	// Index déjà scannés pour l'affichage de la progression.
 	const scannedIndexes = useMemo(
 		() => new Set(commande?.colis.map((k) => k.index_colis) ?? []),
 		[commande],
@@ -214,9 +191,9 @@ export default function MagasinierPage() {
 					<PackageCheck className="h-5 w-5 text-violet-600" />
 				</div>
 				<div>
-					<h2 className="font-heading text-xl font-bold">Mise sur pad de tir</h2>
+					<h2 className="font-heading text-xl font-bold">Zone d'expédition</h2>
 					<p className="text-[13px] text-muted-foreground">
-						Scannez tous les colis d'une commande, puis affectez-la à un pad
+						Scannez tous les cartons d'une commande, puis déposez-la en zone de chargement
 					</p>
 				</div>
 			</div>
@@ -227,7 +204,7 @@ export default function MagasinierPage() {
 					<div className="flex items-center gap-2.5">
 						<ScanLine className="h-4 w-4 text-violet-600" />
 						<h3 className="text-[15px] font-semibold">
-							{commande ? `Commande ${commande.commande_ref}` : "Scanner le 1ᵉʳ colis"}
+							{commande ? `Commande ${commande.commande_ref}` : "Scanner le 1ᵉʳ carton"}
 						</h3>
 					</div>
 
@@ -241,14 +218,13 @@ export default function MagasinierPage() {
 
 					{!commande && !lookupLoading && (
 						<div className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-5 py-8 text-center text-[13px] text-muted-foreground">
-							Scannez le premier colis d'une commande pour démarrer.
+							Scannez le premier carton d'une commande pour démarrer.
 						</div>
 					)}
 
 					{/* ===== Carte commande en cours ===== */}
 					{commande && (
 						<div className="animate-fade-in-up overflow-hidden rounded-xl border border-violet-200 bg-card shadow-sm">
-							{/* Bandeau commande + progression */}
 							<div className="border-b border-border/40 bg-violet-50/50 px-5 py-3">
 								<div className="flex items-start justify-between gap-3">
 									<div>
@@ -259,7 +235,7 @@ export default function MagasinierPage() {
 											<StatusBadge status={commande.commande_statut} />
 										</span>
 										<p className="text-[13px] font-semibold text-violet-700">
-											{scannedCount} / {commande.nb_colis} colis scannés
+											{scannedCount} / {commande.nb_colis} cartons scannés
 										</p>
 									</div>
 									<Button
@@ -273,7 +249,6 @@ export default function MagasinierPage() {
 									</Button>
 								</div>
 
-								{/* Barre de progression */}
 								<div className="mt-2 h-2 overflow-hidden rounded-full bg-violet-100">
 									<div
 										className={`h-full rounded-full transition-all duration-300 ${
@@ -285,7 +260,6 @@ export default function MagasinierPage() {
 									/>
 								</div>
 
-								{/* Pastilles 1..N */}
 								<div className="mt-2.5 flex flex-wrap gap-1.5">
 									{Array.from({ length: commande.nb_colis }).map((_, i) => {
 										const idx = i + 1;
@@ -306,7 +280,6 @@ export default function MagasinierPage() {
 								</div>
 							</div>
 
-							{/* Destinataire */}
 							<div className="flex flex-col gap-2 px-5 py-4">
 								<div className="flex items-center justify-between text-[13px]">
 									<span className="text-muted-foreground">Date</span>
@@ -333,7 +306,6 @@ export default function MagasinierPage() {
 									</span>
 								</div>
 
-								{/* Détail des colis scannés */}
 								<div className="mt-1 flex flex-col gap-2">
 									{commande.colis
 										.slice()
@@ -346,7 +318,7 @@ export default function MagasinierPage() {
 														{k.numero}
 													</span>
 													<span className="text-[11px] text-muted-foreground">
-														Colis {k.index_colis} / {k.nb_colis}
+														Carton {k.index_colis} / {k.nb_colis}
 													</span>
 												</div>
 												{k.contenu.length > 0 && (
@@ -373,64 +345,31 @@ export default function MagasinierPage() {
 										))}
 								</div>
 
-								{/* ===== Zone affectation pad (uniquement si complet) ===== */}
+								{/* ===== Dépôt en zone (uniquement si complet) ===== */}
 								{isComplete ? (
 									<div className="mt-2 flex flex-col gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
 										<p className="flex items-center gap-1.5 text-[13px] font-semibold text-emerald-800">
 											<CheckCircle2 className="h-4 w-4" />
-											Tous les colis sont scannés — affectez la commande à un pad
+											Tous les cartons sont scannés — déposez la commande en zone d'expédition
 										</p>
-										{commande.pad_suggere && (
-											<div className="flex items-center gap-2 rounded-md bg-white/70 px-3 py-2 text-[13px] text-emerald-800">
-												<MapPin className="h-4 w-4 shrink-0" />
-												<span>
-													Pad <b>{padSuggereCode}</b> suggéré
-												</span>
-											</div>
-										)}
-										<div className="flex items-center gap-2">
-											<Select
-												value={selectedPadId}
-												onValueChange={(value) => setSelectedPadId(value ?? "")}
-											>
-												<SelectTrigger className="flex-1 rounded-lg border-border/60 bg-background text-[13px]">
-													<SelectValue placeholder="Choisir un pad de tir" />
-												</SelectTrigger>
-												<SelectContent>
-													{(pads ?? [])
-														.filter((p) => p.actif)
-														.map((p) => (
-															<SelectItem key={p.id} value={p.id}>
-																{p.code} — {p.nom} ({p.nb_colis} colis)
-															</SelectItem>
-														))}
-												</SelectContent>
-											</Select>
-											<Button
-												onClick={handleAffecter}
-												disabled={!selectedPadId || saving}
-												className="gap-1.5 rounded-lg bg-gradient-to-r from-[#0F766E] to-[#0D9488] font-semibold text-white shadow-sm hover:brightness-110"
-											>
-												{saving ? (
-													<Loader2 className="h-4 w-4 animate-spin" />
-												) : (
-													<MapPin className="h-4 w-4" />
-												)}
-												Affecter au pad
-											</Button>
-										</div>
-										{overriding && (
-											<p className="flex items-center gap-1.5 text-[12px] text-amber-700">
-												<AlertTriangle className="h-3.5 w-3.5" />
-												Vous remplacez le pad suggéré ({padSuggereCode})
-											</p>
-										)}
+										<Button
+											onClick={handleDeposer}
+											disabled={saving}
+											className="gap-1.5 rounded-lg bg-gradient-to-r from-[#0F766E] to-[#0D9488] font-semibold text-white shadow-sm hover:brightness-110"
+										>
+											{saving ? (
+												<Loader2 className="h-4 w-4 animate-spin" />
+											) : (
+												<Truck className="h-4 w-4" />
+											)}
+											Déposer en zone d'expédition
+										</Button>
 									</div>
 								) : (
 									<p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
 										<CircleDashed className="h-3.5 w-3.5" />
-										Scannez les {commande.nb_colis - scannedCount} colis restants pour pouvoir
-										affecter un pad.
+										Scannez les {commande.nb_colis - scannedCount} cartons restants pour pouvoir
+										déposer la commande.
 									</p>
 								)}
 							</div>
@@ -438,80 +377,58 @@ export default function MagasinierPage() {
 					)}
 				</section>
 
-				{/* ===== Colonne pads ===== */}
+				{/* ===== Colonne zone d'expédition ===== */}
 				<section className="flex flex-col gap-4">
 					<div className="flex items-center gap-2.5">
-						<Grid3x3 className="h-4 w-4 text-violet-600" />
-						<h3 className="text-[15px] font-semibold">État des pads de tir</h3>
+						<Truck className="h-4 w-4 text-violet-600" />
+						<h3 className="text-[15px] font-semibold">Commandes en zone d'expédition</h3>
 					</div>
 
-					{padsLoading && !pads ? (
-						<div className="grid grid-cols-2 gap-3">
-							{Array.from({ length: 6 }).map((_, i) => (
-								<Skeleton key={`pad-sk-${i}`} className="h-28 rounded-xl" />
+					{zoneLoading && !zone ? (
+						<div className="flex flex-col gap-3">
+							{Array.from({ length: 4 }).map((_, i) => (
+								<Skeleton key={`zone-sk-${i}`} className="h-16 rounded-xl" />
 							))}
+						</div>
+					) : (zone ?? []).length === 0 ? (
+						<div className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-5 py-8 text-center text-[13px] text-muted-foreground">
+							Aucune commande en zone d'expédition.
 						</div>
 					) : (
-						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-							{(pads ?? []).map((pad) => (
-								<div
-									key={pad.id}
-									className={`rounded-xl border px-4 py-3 shadow-sm ${
-										pad.actif
-											? "border-border/60 bg-card"
-											: "border-border/40 bg-muted/30 opacity-60"
-									}`}
+						<ul className="flex flex-col gap-2">
+							{(zone ?? []).map((c) => (
+								<li
+									key={c.commande_id}
+									className="flex items-center justify-between rounded-xl border border-border/60 bg-card px-4 py-3 shadow-sm"
 								>
-									<div className="flex items-center justify-between">
-										<span className="font-mono text-[14px] font-bold">{pad.code}</span>
-										<span className="flex items-center gap-1 text-[12px] text-muted-foreground">
-											<Package className="h-3.5 w-3.5" />
-											{pad.nb_colis}
+									<span>
+										<span className="font-mono text-[14px] font-bold">{c.commande_ref}</span>
+										<span className="ml-2 text-[13px] text-muted-foreground">
+											{c.pharmacien_nom}
 										</span>
-									</div>
-									<p className="text-[11px] text-muted-foreground">{pad.nom}</p>
-									{pad.commandes.length > 0 ? (
-										<ul className="mt-2 flex flex-col gap-1">
-											{pad.commandes.map((c) => (
-												<li
-													key={c.commande_ref}
-													className="flex items-center justify-between rounded-md bg-muted/40 px-2 py-1 text-[12px]"
-												>
-													<span>
-														<span className="font-mono font-medium">{c.commande_ref}</span>
-														<span className="ml-1.5 text-muted-foreground">{c.pharmacien_nom}</span>
-													</span>
-													<span
-														className={`font-semibold tabular-nums ${
-															c.poses === c.total ? "text-emerald-600" : "text-amber-600"
-														}`}
-													>
-														{c.poses}/{c.total}
-													</span>
-												</li>
-											))}
-										</ul>
-									) : (
-										<p className="mt-2 text-[12px] text-muted-foreground/70">Vide</p>
-									)}
-								</div>
+									</span>
+									<span className="flex items-center gap-1.5 text-[13px] font-semibold text-emerald-600">
+										<Package className="h-3.5 w-3.5" />
+										{c.poses}/{c.total} prête à expédier
+									</span>
+								</li>
 							))}
-						</div>
+						</ul>
 					)}
 				</section>
 			</div>
 
-			{/* ===== Popup : colis d'une autre commande ===== */}
+			{/* ===== Popup : carton d'une autre commande ===== */}
 			<AlertDialog open={!!conflict} onOpenChange={(open) => !open && setConflict(null)}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Colis d'une autre commande</AlertDialogTitle>
+						<AlertDialogTitle>Carton d'une autre commande</AlertDialogTitle>
 						<AlertDialogDescription>
 							{commande && conflict && (
 								<>
 									La commande <b>{commande.commande_ref}</b> n'est pas complète ({scannedCount} /{" "}
-									{commande.nb_colis} colis scannés). Le colis <b>{conflict.numero}</b> appartient à
-									la commande <b>{conflict.commande_ref}</b>.
+									{commande.nb_colis} cartons scannés). Le carton <b>{conflict.numero}</b>{" "}
+									appartient à la commande <b>{conflict.commande_ref}</b>.
 									<br />
 									Voulez-vous abandonner la commande en cours et passer à celle-ci ?
 								</>
@@ -540,9 +457,9 @@ export default function MagasinierPage() {
 						<AlertDialogDescription>
 							{commande && (
 								<>
-									Il manque <b>{commande.nb_colis - scannedCount}</b> colis sur {commande.nb_colis}{" "}
-									pour la commande <b>{commande.commande_ref}</b>. Si vous changez maintenant, aucun
-									colis ne sera affecté à un pad et vous repartirez à zéro.
+									Il manque <b>{commande.nb_colis - scannedCount}</b> cartons sur{" "}
+									{commande.nb_colis} pour la commande <b>{commande.commande_ref}</b>. Si vous
+									changez maintenant, rien ne sera déposé et vous repartirez à zéro.
 								</>
 							)}
 						</AlertDialogDescription>

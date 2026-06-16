@@ -1094,6 +1094,18 @@ async def start_delivery(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
 
     await _require_delivery_access(db, current_user, commande)
+
+    # Idempotent : si le scan des cartons a déjà fait passer la commande en
+    # livraison, on retourne l'état courant sans rejouer la transition.
+    if commande.statut == OrderStatus.EN_ROUTE:
+        pharm_result = await db.execute(select(User).where(User.id == commande.pharmacien_id))
+        pharmacien = pharm_result.scalar_one_or_none()
+        camion_result = await db.execute(select(Camion).where(Camion.id == commande.camion_id))
+        camion = camion_result.scalar_one_or_none()
+        return OrderDetailResponse(
+            **_enrich_order(commande, pharmacien, camion, viewer_role=current_user.role.value)
+        )
+
     if not commande.feuille_route_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Route sheet missing")
 

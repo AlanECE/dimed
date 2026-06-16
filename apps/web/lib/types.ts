@@ -436,3 +436,11 @@ export type PadOccupation = {
 	nb_colis: number;
 	commandes: PadOccupationCommande[];
 };
+
+export type ZoneExpeditionCommande = {
+	commande_id: string;
+	commande_ref: string;
+	pharmacien_nom: string;
+	poses: number;
+	total: number;
+};
