@@ -40,7 +40,8 @@ export default function LoginPage() {
 
 		try {
 			await login(email, password);
-			router.push("/catalogue");
+			// Redirige vers l'accueil, qui route ensuite vers la page du rôle.
+			router.push("/");
 		} catch (err) {
 			if (err instanceof ApiError) {
 				if (err.status === 403 && err.message === "email_not_verified") {

@@ -291,7 +291,8 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 		(ligne: LignePreparationResponse) => {
 			const counted = controlCounts[ligne.id];
 			if (counted === null || counted === undefined) return;
-			const expected = ligne.qte_prelevee ?? 0;
+			// Référence = quantité commandée (le contrôleur compte les boîtes réelles).
+			const expected = ligne.qte_demandee;
 			setLineStatus((prev) => ({ ...prev, [ligne.id]: counted === expected }));
 		},
 		[controlCounts],
@@ -390,8 +391,8 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 				<div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
 					<XCircle className="h-4 w-4 text-red-600" />
 					<p className="text-[13px] text-red-800">
-						{errorCount} écart{errorCount > 1 ? "s" : ""} — corrigez les quantités signalées en
-						rouge.
+						{errorCount} écart{errorCount > 1 ? "s" : ""} avec la quantité commandée — vous pouvez
+						tout de même valider, c'est votre comptage qui fait foi.
 					</p>
 				</div>
 			)}
@@ -428,7 +429,7 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 						{detail.lignes.map((ligne) => {
 							const counted = controlCounts[ligne.id];
 							const status = lineStatus[ligne.id];
-							const expected = ligne.qte_prelevee ?? 0;
+							const expected = ligne.qte_demandee;
 							const diff = (counted ?? 0) - expected;
 							return (
 								<TableRow

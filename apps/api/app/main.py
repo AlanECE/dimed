@@ -35,7 +35,27 @@ _SEED_USERS = [
     (UserRole.CONTROLEUR, "controleur@dimed.dz", "Controleur Demo"),
     (UserRole.LIVREUR, "livreur@dimed.dz", "Livreur Demo"),
     (UserRole.MAGASINIER, "magasinier@dimed.dz", "Magasinier Demo"),
+    (UserRole.FACTURIER, "facturier@dimed.dz", "Facturier Demo"),
 ]
+
+
+async def _ensure_user(session, role: UserRole, email: str, nom: str) -> bool:
+    """Create a verified demo user if the email is not already present."""
+    existing = await session.execute(select(User).where(User.email == email).limit(1))
+    if existing.scalar_one_or_none() is not None:
+        return False
+    session.add(
+        User(
+            id=uuid4(),
+            email=email,
+            password_hash=hash_password(_SEED_PASSWORD),
+            role=role,
+            nom=nom,
+            is_active=True,
+            is_email_verified=True,
+        )
+    )
+    return True
 
 
 @asynccontextmanager
@@ -60,26 +80,29 @@ async def lifespan(app: FastAPI):
                 )
             await session.commit()
             logger.info("Seeded %d users (password: %s)", len(_SEED_USERS), _SEED_PASSWORD)
-        else:
-            # Additive backfill: roles introduced after the initial seed
-            # (the full seed above only runs on an empty users table).
-            magasinier = await session.execute(
-                select(User).where(User.role == UserRole.MAGASINIER).limit(1)
-            )
-            if magasinier.scalar_one_or_none() is None:
-                session.add(
-                    User(
-                        id=uuid4(),
-                        email="magasinier@dimed.dz",
-                        password_hash=hash_password(_SEED_PASSWORD),
-                        role=UserRole.MAGASINIER,
-                        nom="Magasinier Demo",
-                        is_active=True,
-                        is_email_verified=True,
-                    )
-                )
-                await session.commit()
-                logger.info("Seeded magasinier user (password: %s)", _SEED_PASSWORD)
+
+        # Additive backfill: roles/comptes introduced after the initial seed
+        # (the full seed above only runs on an empty users table).
+        backfill: list[tuple[UserRole, str, str]] = [
+            (UserRole.MAGASINIER, "magasinier@dimed.dz", "Magasinier Demo"),
+            (UserRole.FACTURIER, "facturier@dimed.dz", "Facturier Demo"),
+        ]
+
+        # Un livreur de test par ligne de route (camion) : livreur1@dimed.dz, …
+        from app.models.camion import Camion
+
+        camions = (await session.execute(select(Camion).order_by(Camion.nom.asc()))).scalars().all()
+        for i in range(1, len(camions) + 1):
+            backfill.append((UserRole.LIVREUR, f"livreur{i}@dimed.dz", f"Livreur {i}"))
+
+        created = 0
+        for role, email, nom in backfill:
+            if await _ensure_user(session, role, email, nom):
+                created += 1
+
+        if created:
+            await session.commit()
+            logger.info("Backfilled %d demo users (password: %s)", created, _SEED_PASSWORD)
     yield
     await engine.dispose()
 

@@ -50,6 +50,12 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
 	const login = useCallback(async (email: string, password: string) => {
 		const userData = await postJson<UserResponse>("/auth/login", { email, password });
+		// Marque une connexion fraîche : exploité pour le popup "nouvelles commandes".
+		try {
+			sessionStorage.setItem("dimed-just-logged-in", "1");
+		} catch {
+			// sessionStorage indisponible (SSR/restrictions) — sans effet
+		}
 		setUser(userData);
 	}, []);
 
@@ -68,6 +74,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
 	const loginWithGoogle = useCallback(async (payload: GoogleAuthPayload) => {
 		const userData = await postJson<UserResponse>("/auth/google", payload);
+		try {
+			sessionStorage.setItem("dimed-just-logged-in", "1");
+		} catch {
+			// sessionStorage indisponible — sans effet
+		}
 		setUser(userData);
 	}, []);
 

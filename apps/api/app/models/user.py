@@ -15,6 +15,7 @@ class UserRole(enum.StrEnum):
     CONTROLEUR = "controleur"
     LIVREUR = "livreur"
     MAGASINIER = "magasinier"
+    FACTURIER = "facturier"
 
 
 class User(AuditMixin, Base):

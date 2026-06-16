@@ -315,7 +315,12 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 	const handleToggle = useCallback(
 		(ligne: LignePreparationResponse) => {
 			const newVerifie = !ligne.verifie;
-			void patchLigne(ligne.id, { verifie: newVerifie }, { verifie: newVerifie });
+			// En cochant "vérifié", on persiste aussi la quantité prélevée (sinon elle
+			// reste NULL côté serveur si le préparateur n'a pas touché au champ).
+			const patch: UpdateLignePatch = newVerifie
+				? { verifie: true, qte_prelevee: ligne.qte_prelevee ?? ligne.qte_demandee }
+				: { verifie: false };
+			void patchLigne(ligne.id, patch, { verifie: newVerifie });
 		},
 		[patchLigne],
 	);

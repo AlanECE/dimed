@@ -21,6 +21,7 @@ export default function Home() {
 			controleur: "/verification",
 			magasinier: "/magasinier",
 			livreur: "/livraison",
+			facturier: "/facturier",
 		};
 		router.push(routes[user.role] || "/catalogue");
 	}, [user, loading, router]);

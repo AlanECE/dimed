@@ -272,6 +272,19 @@ async def list_orders(
         )
         query = query.where(Commande.feuille_route_id.in_(today_sheets))
         count_query = count_query.where(Commande.feuille_route_id.in_(today_sheets))
+    elif role == "facturier":
+        # Le facturier voit les commandes dès la préparation (facture déjà émise
+        # à l'acceptation) jusqu'à la livraison, pour facturer/coller les QR.
+        facturier_statuses = [
+            OrderStatus.EN_PREPARATION,
+            OrderStatus.PRELEVEE_PARTIELLEMENT,
+            OrderStatus.EN_VERIFICATION,
+            OrderStatus.PRETE,
+            OrderStatus.EN_ROUTE,
+            OrderStatus.LIVREE,
+        ]
+        query = query.where(Commande.statut.in_(facturier_statuses))
+        count_query = count_query.where(Commande.statut.in_(facturier_statuses))
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
@@ -1683,6 +1696,24 @@ async def validate_control(
     from app.expedition.service import create_colis_for_commande
 
     await create_colis_for_commande(db, commande, body.nb_colis)
+
+    # Notifie le(s) facturier(s) : commande contrôlée → étiquettes QR à coller.
+    from app.models.user import UserRole
+
+    facturiers = await db.execute(select(User).where(User.role == UserRole.FACTURIER))
+    for facturier in facturiers.scalars().all():
+        db.add(
+            Notification(
+                id=uuid4(),
+                user_id=facturier.id,
+                commande_id=commande.id,
+                type="commande_controlee",
+                message=(
+                    f"Commande {commande.reference_id} contrôlée — "
+                    f"{body.nb_colis} colis, étiquettes QR à imprimer/coller"
+                ),
+            )
+        )
 
     await db.commit()
     await db.refresh(commande, ["lignes"])

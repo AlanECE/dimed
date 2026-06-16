@@ -142,7 +142,7 @@ async def download_facture(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> FileResponse:
-    if current_user.role.value not in ("pharmacien", "operatrice", "admin"):
+    if current_user.role.value not in ("pharmacien", "operatrice", "admin", "facturier"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     result = await db.execute(select(Facture).where(Facture.commande_id == commande_id))

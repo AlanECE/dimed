@@ -1,5 +1,6 @@
 "use client";
 
+import { NewOrdersWatcher } from "@/components/new-orders-watcher";
 import { NotificationBell } from "@/components/notification-bell";
 import { Sidebar } from "@/components/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,6 +28,7 @@ export default function AuthenticatedLayout({
 
 	return (
 		<CartProvider>
+			{(user?.role === "operatrice" || user?.role === "admin") && <NewOrdersWatcher />}
 			<div className="flex h-screen">
 				<Sidebar />
 				<div className="flex flex-1 flex-col overflow-hidden">

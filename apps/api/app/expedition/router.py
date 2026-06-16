@@ -173,6 +173,64 @@ async def depose_pad(
     }
 
 
+@router.post("/commandes/{commande_id}/depose-pad")
+async def depose_pad_commande(
+    commande_id: UUID,
+    body: DeposePadRequest,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Magasinier stages ALL parcels of an order onto a single pad at once.
+
+    Used by the batch workflow: the magasinier scans every parcel of an order
+    on his cart, then assigns the whole order to one pad de tir.
+    """
+    if current_user.role.value not in ("magasinier", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    pad_result = await db.execute(select(PadTir).where(PadTir.id == body.pad_tir_id))
+    pad = pad_result.scalar_one_or_none()
+    if not pad:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pad de tir introuvable")
+    if not pad.actif:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Pad {pad.code} inactif",
+        )
+
+    colis_list = await get_commande_colis(db, commande_id)
+    if not colis_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Aucun colis pour cette commande",
+        )
+
+    commande_result = await db.execute(select(Commande).where(Commande.id == commande_id))
+    commande = commande_result.scalar_one_or_none()
+
+    db.info["actor_id"] = str(current_user.id)
+    deposes: list[str] = []
+    ignores: list[str] = []
+    for colis in colis_list:
+        if colis.statut in (ColisStatus.ETIQUETE, ColisStatus.SUR_PAD):
+            colis.pad_tir_id = pad.id
+            colis.statut = ColisStatus.SUR_PAD
+            await log_scan(db, colis, ScanType.DEPOT_PAD, current_user.id, pad_tir_id=pad.id)
+            deposes.append(colis.numero)
+        else:
+            ignores.append(colis.numero)
+    await db.commit()
+
+    return {
+        "status": "ok",
+        "commande_ref": commande.reference_id if commande else None,
+        "pad": {"id": str(pad.id), "code": pad.code, "nom": pad.nom},
+        "nb_colis": len(colis_list),
+        "deposes": deposes,
+        "ignores": ignores,
+    }
+
+
 @router.post("/colis/{numero}/scan-chargement")
 async def scan_chargement(
     numero: str,
@@ -494,7 +552,7 @@ async def download_etiquettes(
 
     Clean endpoint: S4 (facturier) will call it through the API later.
     """
-    if current_user.role.value not in ("controleur", "operatrice", "admin"):
+    if current_user.role.value not in ("controleur", "operatrice", "admin", "facturier"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     from app.commandes.service import get_order_with_lines
@@ -536,6 +594,7 @@ async def download_etiquettes(
         client_secteur=pharmacien.secteur if pharmacien else None,
         date_str=commande.created_at.date().isoformat(),
         colis=colis_data,
+        controleur_nom=commande.visa_controleur,
     )
 
     return FileResponse(

@@ -15,7 +15,7 @@ type Props = {
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
-export function GoogleLoginButton({ role, onSuccessRedirect = "/catalogue" }: Props) {
+export function GoogleLoginButton({ role, onSuccessRedirect = "/" }: Props) {
 	const router = useRouter();
 	const { loginWithGoogle } = useAuth();
 
