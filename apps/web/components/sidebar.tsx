@@ -42,6 +42,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
 		{ href: "/creances", label: "Créances", icon: Wallet },
 		{ href: "/reclamations", label: "Réclamations", icon: MessageSquareWarning },
 		{ href: "/documents", label: "Documents", icon: FileText },
+		{ href: "/rapports", label: "Statistiques", icon: BarChart3 },
 	],
 	operatrice: [
 		{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },

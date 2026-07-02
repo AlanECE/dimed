@@ -214,8 +214,9 @@ async def extract_vignette_fields(
                 ],
             },
         ],
+        # NB : pas de response_format — le provider Baidu (ernie vision) renvoie
+        # un 400 quand il est présent ; _extract_json tolère déjà le texte libre.
         "temperature": 0.0,
-        "response_format": {"type": "json_object"},
     }
 
     headers = {

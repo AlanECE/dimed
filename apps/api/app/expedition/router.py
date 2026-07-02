@@ -289,8 +289,9 @@ async def list_zone_expedition(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     staged_result = await db.execute(
-        select(Colis, Commande)
+        select(Colis, Commande, PadTir)
         .join(Commande, Colis.commande_id == Commande.id)
+        .outerjoin(PadTir, Colis.pad_tir_id == PadTir.id)
         .where(Colis.statut == ColisStatus.SUR_PAD)
     )
     rows = staged_result.all()
@@ -321,9 +322,12 @@ async def list_zone_expedition(
                 ),
                 "poses": 0,
                 "total": totals_map.get(commande.id, 0),
+                "zone": None,
             },
         )
         entry["poses"] += 1
+        if row.PadTir is not None:
+            entry["zone"] = {"code": row.PadTir.code, "nom": row.PadTir.nom}
 
     items = sorted(by_commande.values(), key=lambda c: c["commande_ref"])
     return {"commandes": items, "total": len(items)}

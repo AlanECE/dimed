@@ -16,6 +16,8 @@ export type UserResponse = {
 	adresse: string | null;
 	secteur: string | null;
 	telephone: string | null;
+	/** Ligne de livraison (fiche client pharmacien). */
+	camion_id?: string | null;
 	is_active: boolean;
 	is_email_verified: boolean;
 	oauth_provider: string | null;
@@ -59,6 +61,8 @@ export type MedicamentResponse = {
 	dosage: string | null;
 	forme: string | null;
 	ppa: number;
+	/** Taux de TVA (%) — 0 = hors TVA (médicaments), >0 = soumis (compléments). */
+	taux_tva?: number;
 	fabricant: string | null;
 	stock_quantity: number;
 	image_path: string | null;
@@ -183,6 +187,7 @@ export type ReportStats = {
 	order_count: number;
 	avg_order_value: number;
 	delivery_rate: number;
+	total_remises: number;
 	status_breakdown: Record<string, number>;
 	top_products: { designation: string; total_qty: number; total_amount: number }[];
 	previous_period: {
@@ -443,4 +448,5 @@ export type ZoneExpeditionCommande = {
 	pharmacien_nom: string;
 	poses: number;
 	total: number;
+	zone: { code: string; nom: string } | null;
 };

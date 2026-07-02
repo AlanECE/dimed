@@ -160,6 +160,10 @@ async def list_pharmaciens(
         .order_by(User.nom)
     )
     pharmaciens = result.scalars().all()
+
+    camions_result = await db.execute(select(Camion))
+    camions_map = {c.id: c.nom for c in camions_result.scalars().all()}
+
     return {
         "pharmaciens": [
             {
@@ -169,6 +173,8 @@ async def list_pharmaciens(
                 "adresse": u.adresse,
                 "secteur": u.secteur,
                 "telephone": u.telephone,
+                "camion_id": str(u.camion_id) if u.camion_id else None,
+                "camion_nom": camions_map.get(u.camion_id),
             }
             for u in pharmaciens
         ]
@@ -419,6 +425,25 @@ async def order_stats(
         for r in lines_result.all()
     ]
 
+    # Remise totale accordée sur la période (Σ qte × PU × R%).
+    remises_q = (
+        select(
+            func.coalesce(
+                func.sum(
+                    LigneCommande.qte_demandee
+                    * LigneCommande.prix_unitaire
+                    * LigneCommande.remise_pct
+                    / 100
+                ),
+                0,
+            )
+        )
+        .select_from(LigneCommande)
+        .join(Commande, LigneCommande.commande_id == Commande.id)
+        .where(*base_filter)
+    )
+    total_remises = float((await db.execute(remises_q)).scalar() or 0)
+
     # Previous period comparison (M-1)
     days = periods.get(period, 30)
     prev_end = since
@@ -454,6 +479,7 @@ async def order_stats(
         "order_count": order_count,
         "avg_order_value": round(avg_order_value, 2),
         "delivery_rate": round(delivery_rate, 1),
+        "total_remises": round(total_remises, 2),
         "status_breakdown": status_breakdown,
         "top_products": top_products,
         "previous_period": {
@@ -527,16 +553,27 @@ async def accept_order(
 
     db.info["actor_id"] = str(current_user.id)
     commande = await transition_order(db, commande_id, OrderStatus.ACCEPTEE, current_user.id)
-    await db.commit()
-    await db.refresh(commande, ["lignes"])
 
     pharm_result = await db.execute(select(User).where(User.id == commande.pharmacien_id))
     pharmacien = pharm_result.scalar_one_or_none()
 
+    # La ligne de livraison est déterminée à la création de la fiche client :
+    # la commande en hérite automatiquement (plus de ressaisie manuelle).
+    camion = None
+    if pharmacien and pharmacien.camion_id and not commande.camion_id:
+        commande.camion_id = pharmacien.camion_id
+        feuille = await get_or_create_route_sheet(db, pharmacien.camion_id, date.today())
+        commande.feuille_route_id = feuille.id
+        camion_result = await db.execute(select(Camion).where(Camion.id == pharmacien.camion_id))
+        camion = camion_result.scalar_one_or_none()
+
+    await db.commit()
+    await db.refresh(commande, ["lignes"])
+
     data = _enrich_order(
         commande,
         pharmacien,
-        None,
+        camion,
         viewer_role=current_user.role.value,
     )
     return OrderDetailResponse(**data)
@@ -1708,6 +1745,12 @@ async def validate_control(
     from app.expedition.service import create_colis_for_commande
 
     await create_colis_for_commande(db, commande, body.nb_colis)
+
+    # La proforma émise à l'acceptation devient la facture définitive
+    # maintenant que la commande est contrôlée.
+    facture = await _load_facture_for_commande(db, commande.id)
+    if facture is not None:
+        await regenerate_facture_pdf(db, facture)
 
     # Notifie le(s) facturier(s) : commande contrôlée → étiquettes QR à coller.
     from app.models.user import UserRole

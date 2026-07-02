@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useExpedition } from "@/hooks/use-expedition";
-import type { ColisDetail, ZoneExpeditionCommande } from "@/lib/types";
+import type { ColisDetail, PadOccupation, ZoneExpeditionCommande } from "@/lib/types";
 import {
 	CheckCircle2,
 	CircleDashed,
@@ -64,13 +64,16 @@ function aggregateFrom(detail: ColisDetail): ActiveCommande {
 }
 
 export default function MagasinierPage() {
-	const { lookupColis, deposeZoneExpedition, fetchZoneExpedition } = useExpedition();
+	const { lookupColis, deposePadCommande, fetchPads, fetchZoneExpedition } = useExpedition();
 
 	const [commande, setCommande] = useState<ActiveCommande | null>(null);
 	const [lookupLoading, setLookupLoading] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [zone, setZone] = useState<ZoneExpeditionCommande[] | null>(null);
 	const [zoneLoading, setZoneLoading] = useState(true);
+	// Zones d'expédition disponibles (le CR demande d'enregistrer la zone au dépôt).
+	const [pads, setPads] = useState<PadOccupation[]>([]);
+	const [selectedPadId, setSelectedPadId] = useState<string | null>(null);
 
 	// Colis scanné appartenant à une AUTRE commande alors qu'une est en cours.
 	const [conflict, setConflict] = useState<ColisDetail | null>(null);
@@ -95,10 +98,17 @@ export default function MagasinierPage() {
 		refreshZone();
 	}, [refreshZone]);
 
+	useEffect(() => {
+		fetchPads()
+			.then((list) => setPads(list.filter((p) => p.actif)))
+			.catch(() => setPads([]));
+	}, [fetchPads]);
+
 	const resetCommande = useCallback(() => {
 		setCommande(null);
 		setConflict(null);
 		setAskLeave(false);
+		setSelectedPadId(null);
 	}, []);
 
 	const startCommande = useCallback((detail: ColisDetail) => {
@@ -155,12 +165,12 @@ export default function MagasinierPage() {
 	);
 
 	const handleDeposer = useCallback(async () => {
-		if (!commande || !isComplete) return;
+		if (!commande || !isComplete || !selectedPadId) return;
 		setSaving(true);
 		try {
-			const res = await deposeZoneExpedition(commande.commande_id);
+			const res = await deposePadCommande(commande.commande_id, selectedPadId);
 			toast.success(
-				`Commande ${res.commande_ref ?? commande.commande_ref} déposée en zone d'expédition (${res.deposes.length} cartons)`,
+				`Commande ${res.commande_ref ?? commande.commande_ref} déposée — ${res.pad.nom} (${res.deposes.length} cartons)`,
 			);
 			resetCommande();
 			refreshZone();
@@ -169,7 +179,7 @@ export default function MagasinierPage() {
 		} finally {
 			setSaving(false);
 		}
-	}, [commande, isComplete, deposeZoneExpedition, resetCommande, refreshZone]);
+	}, [commande, isComplete, selectedPadId, deposePadCommande, resetCommande, refreshZone]);
 
 	const switchToConflict = useCallback(() => {
 		if (!conflict) return;
@@ -350,11 +360,27 @@ export default function MagasinierPage() {
 									<div className="mt-2 flex flex-col gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
 										<p className="flex items-center gap-1.5 text-[13px] font-semibold text-emerald-800">
 											<CheckCircle2 className="h-4 w-4" />
-											Tous les cartons sont scannés — déposez la commande en zone d'expédition
+											Tous les cartons sont scannés — choisissez la zone d'expédition
 										</p>
+										<div className="flex flex-wrap gap-1.5">
+											{pads.map((p) => (
+												<button
+													key={p.id}
+													type="button"
+													onClick={() => setSelectedPadId(p.id)}
+													className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+														selectedPadId === p.id
+															? "border-emerald-600 bg-emerald-600 text-white"
+															: "border-border/60 bg-card text-foreground hover:border-emerald-400"
+													}`}
+												>
+													{p.nom}
+												</button>
+											))}
+										</div>
 										<Button
 											onClick={handleDeposer}
-											disabled={saving}
+											disabled={saving || !selectedPadId}
 											className="gap-1.5 rounded-lg bg-gradient-to-r from-[#0F766E] to-[#0D9488] font-semibold text-white shadow-sm hover:brightness-110"
 										>
 											{saving ? (
@@ -362,7 +388,9 @@ export default function MagasinierPage() {
 											) : (
 												<Truck className="h-4 w-4" />
 											)}
-											Déposer en zone d'expédition
+											{selectedPadId
+												? `Déposer — ${pads.find((p) => p.id === selectedPadId)?.nom}`
+												: "Choisissez une zone pour déposer"}
 										</Button>
 									</div>
 								) : (
@@ -406,6 +434,11 @@ export default function MagasinierPage() {
 										<span className="ml-2 text-[13px] text-muted-foreground">
 											{c.pharmacien_nom}
 										</span>
+										{c.zone && (
+											<span className="ml-2 rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+												{c.zone.nom}
+											</span>
+										)}
 									</span>
 									<span className="flex items-center gap-1.5 text-[13px] font-semibold text-emerald-600">
 										<Package className="h-3.5 w-3.5" />

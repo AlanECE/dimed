@@ -43,12 +43,17 @@ async def _load_commande_pdf_context(
     med_by_id: dict = {}
     if medicament_ids:
         med_result = await db.execute(
-            select(Medicament.id, Medicament.code_article, Medicament.ppa).where(
-                Medicament.id.in_(medicament_ids)
-            )
+            select(
+                Medicament.id, Medicament.code_article, Medicament.ppa, Medicament.taux_tva
+            ).where(Medicament.id.in_(medicament_ids))
         )
         med_by_id = {
-            row.id: {"code": row.code_article, "ppa": float(row.ppa)} for row in med_result
+            row.id: {
+                "code": row.code_article,
+                "ppa": float(row.ppa),
+                "taux_tva": float(row.taux_tva or 0),
+            }
+            for row in med_result
         }
 
     dlc_by_key, latest_dlc_by_med = await resolve_dlc(db, medicament_ids)
@@ -72,10 +77,30 @@ async def _load_commande_pdf_context(
                 "ppa": med_info.get("ppa", float(ligne.prix_unitaire)),
                 "prix_unitaire": float(ligne.prix_unitaire),
                 "remise_pct": remise_pct,
+                "taux_tva": med_info.get("taux_tva", 0.0),
                 "total": net,
             }
         )
     return pharmacien, lignes_data
+
+
+# Tant que le contrôle n'est pas validé, le document émis est une proforma —
+# la facture ne devient définitive qu'une fois la commande PRETE (contrôlée).
+_PROFORMA_STATUSES = {
+    OrderStatus.CREEE,
+    OrderStatus.ACCEPTEE,
+    OrderStatus.EN_PREPARATION,
+    OrderStatus.PRELEVEE_PARTIELLEMENT,
+    OrderStatus.EN_VERIFICATION,
+}
+
+
+def _montant_tva(lignes_data: list[dict]) -> Decimal:
+    total = sum(
+        Decimal(str(ln["total"])) * Decimal(str(ln.get("taux_tva", 0))) / Decimal("100")
+        for ln in lignes_data
+    )
+    return Decimal(total).quantize(Decimal("0.01"))
 
 
 def _render_facture_pdf(
@@ -99,6 +124,7 @@ def _render_facture_pdf(
         montant_total=float(commande.montant_total),
         visa_preparateur=commande.visa_preparateur,
         visa_controleur=commande.visa_controleur,
+        is_proforma=commande.statut in _PROFORMA_STATUSES,
     )
 
 
@@ -111,13 +137,14 @@ async def generate_order_documents(
     bl_ref = await next_bl_ref(db)
     now = datetime.now(UTC)
 
+    montant_tva = _montant_tva(lignes_data)
     facture = Facture(
         id=uuid4(),
         reference_id=facture_ref,
         commande_id=commande.id,
         date_emission=now,
         montant_ht=commande.montant_total,
-        montant_ttc=commande.montant_total,  # no tax in v1
+        montant_ttc=commande.montant_total + montant_tva,
     )
     db.add(facture)
     await db.flush()  # ensure facture row exists before creance FK references it
@@ -130,7 +157,7 @@ async def generate_order_documents(
         montant_total=commande.montant_total,
         montant_paye=Decimal("0"),
         statut=CreanceStatut.EN_ATTENTE,
-        echeance=date.fromtimestamp((now.timestamp() + 30 * 86400)),
+        echeance=date.fromtimestamp(now.timestamp() + 30 * 86400),
     )
     db.add(creance)
 
@@ -200,6 +227,7 @@ async def regenerate_facture_pdf(
     bl_ref = bl_result.scalar_one_or_none()
 
     pharmacien, lignes_data = await _load_commande_pdf_context(db, commande)
+    facture.montant_ttc = facture.montant_ht + _montant_tva(lignes_data)
     _render_facture_pdf(facture, commande, pharmacien, lignes_data, bl_ref)
 
 

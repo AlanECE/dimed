@@ -35,6 +35,7 @@ class UserResponse(BaseModel):
     adresse: str | None = None
     secteur: str | None = None
     telephone: str | None = None
+    camion_id: UUID | None = None  # ligne de livraison (fiche client pharmacien)
     is_active: bool
     is_email_verified: bool = False
     oauth_provider: str | None = None
@@ -68,6 +69,7 @@ class AdminUserUpdate(BaseModel):
     role: UserRole | None = None
     is_active: bool | None = None
     nom: str | None = None
+    camion_id: UUID | None = None  # ligne de livraison du client (pharmacien)
 
 
 class SignupRequest(BaseModel):

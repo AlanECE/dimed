@@ -73,6 +73,13 @@ export default function RapportsPage() {
 			iconBg: "bg-amber-50 text-amber-600",
 			gradient: "from-amber-500 to-orange-500",
 		},
+		{
+			label: "Remises accordées",
+			value: stats ? `${(stats.total_remises ?? 0).toLocaleString("fr-FR")} DA` : "—",
+			icon: Percent,
+			iconBg: "bg-rose-50 text-rose-600",
+			gradient: "from-rose-500 to-pink-500",
+		},
 	];
 
 	const maxStatusCount = stats ? Math.max(...Object.values(stats.status_breakdown), 1) : 1;
@@ -106,7 +113,7 @@ export default function RapportsPage() {
 			</div>
 
 			{/* KPI Row */}
-			<div className="grid grid-cols-4 gap-5">
+			<div className="grid grid-cols-2 gap-5 xl:grid-cols-5">
 				{kpis.map((kpi, i) => (
 					<div
 						key={kpi.label}

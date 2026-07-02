@@ -29,6 +29,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { useCamions } from "@/hooks/use-camions";
 import { useUsers } from "@/hooks/use-users";
 import { Loader2, Pencil, Plus, Power, Users } from "lucide-react";
 import { useState } from "react";
@@ -47,8 +48,11 @@ const ROLE_LABELS: Record<string, string> = Object.fromEntries(
 	ROLES.map((r) => [r.value, r.label]),
 );
 
+const NO_LIGNE = "__none__";
+
 export default function AdminUtilisateursPage() {
 	const { users, total, loading, createUser, updateUser } = useUsers();
+	const { camions } = useCamions();
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 
@@ -102,6 +106,17 @@ export default function AdminUtilisateursPage() {
 		}
 	}
 
+	// La ligne de livraison est portée par la fiche client : les commandes du
+	// pharmacien en héritent automatiquement à l'acceptation.
+	async function handleAssignLigne(userId: string, camionId: string) {
+		try {
+			await updateUser(userId, { camion_id: camionId === NO_LIGNE ? null : camionId });
+			toast.success("Ligne de livraison mise à jour");
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Erreur");
+		}
+	}
+
 	return (
 		<div className="flex flex-col gap-6">
 			<div className="flex items-center justify-between">
@@ -142,6 +157,9 @@ export default function AdminUtilisateursPage() {
 							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Statut
 							</TableHead>
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Ligne de livraison
+							</TableHead>
 							<TableHead className="text-right text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Actions
 							</TableHead>
@@ -151,7 +169,7 @@ export default function AdminUtilisateursPage() {
 						{loading
 							? Array.from({ length: 5 }).map((_, i) => (
 									<TableRow key={`sk-${i}`} className="border-border/30">
-										{Array.from({ length: 5 }).map((_, j) => (
+										{Array.from({ length: 6 }).map((_, j) => (
 											<TableCell key={`sk-${i}-${j}`}>
 												<Skeleton className="h-4 w-full" />
 											</TableCell>
@@ -181,6 +199,28 @@ export default function AdminUtilisateursPage() {
 											>
 												{u.is_active ? "Actif" : "Inactif"}
 											</Badge>
+										</TableCell>
+										<TableCell>
+											{u.role === "pharmacien" ? (
+												<Select
+													value={u.camion_id ?? NO_LIGNE}
+													onValueChange={(v) => handleAssignLigne(u.id, v ?? NO_LIGNE)}
+												>
+													<SelectTrigger className="h-8 w-52 rounded-lg border-border/60 text-[12px]">
+														<SelectValue placeholder="Aucune ligne" />
+													</SelectTrigger>
+													<SelectContent>
+														<SelectItem value={NO_LIGNE}>Aucune ligne</SelectItem>
+														{camions.map((c) => (
+															<SelectItem key={c.id} value={c.id}>
+																{c.nom}
+															</SelectItem>
+														))}
+													</SelectContent>
+												</Select>
+											) : (
+												<span className="text-[12px] text-muted-foreground">—</span>
+											)}
 										</TableCell>
 										<TableCell className="text-right">
 											<Button

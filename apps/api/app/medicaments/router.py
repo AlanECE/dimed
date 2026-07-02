@@ -24,6 +24,7 @@ class MedicamentResponse(BaseModel):
     dosage: str | None
     forme: str | None
     ppa: float
+    taux_tva: float = 0.0  # 0 = hors TVA (médicaments) ; >0 = soumis (compléments)
     fabricant: str | None
     stock_quantity: int
     image_path: str | None

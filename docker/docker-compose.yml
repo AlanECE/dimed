@@ -55,7 +55,7 @@ services:
       DIMED_SMTP_TLS: ${DIMED_SMTP_TLS:-false}
       DIMED_SMTP_SSL: ${DIMED_SMTP_SSL:-false}
       DIMED_OPENROUTER_API_KEY: ${DIMED_OPENROUTER_API_KEY:-}
-      DIMED_OCR_MODEL: ${DIMED_OCR_MODEL:-google/gemma-3-27b-it:free}
+      DIMED_OCR_MODEL: ${DIMED_OCR_MODEL:-baidu/ernie-4.5-vl-424b-a47b}
     depends_on:
       db:
         condition: service_healthy

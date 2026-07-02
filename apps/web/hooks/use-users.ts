@@ -17,6 +17,7 @@ type UpdateUserData = {
 	role?: string;
 	is_active?: boolean;
 	nom?: string;
+	camion_id?: string | null; // ligne de livraison de la fiche client
 };
 
 export function useUsers(limit = 50, offset = 0) {
