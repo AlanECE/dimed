@@ -126,6 +126,9 @@ export function MedicationTable() {
 							<TableHead className="text-right text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70 tabular-nums">
 								PPA
 							</TableHead>
+							<TableHead className="text-center text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								TVA
+							</TableHead>
 							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
 								Fabricant
 							</TableHead>
@@ -139,7 +142,7 @@ export function MedicationTable() {
 						{loading ? (
 							Array.from({ length: 6 }).map((_, i) => (
 								<TableRow key={`skeleton-${i}`} className="border-border/30">
-									{Array.from({ length: 8 }).map((_, j) => (
+									{Array.from({ length: 9 }).map((_, j) => (
 										<TableCell key={`cell-${i}-${j}`}>
 											<Skeleton className="h-4 w-full" />
 										</TableCell>
@@ -148,7 +151,7 @@ export function MedicationTable() {
 							))
 						) : filtered.length === 0 ? (
 							<TableRow>
-								<TableCell colSpan={8} className="py-12 text-center">
+								<TableCell colSpan={9} className="py-12 text-center">
 									<p className="text-[13px] font-medium text-muted-foreground">
 										Aucun médicament trouvé
 									</p>
@@ -173,6 +176,17 @@ export function MedicationTable() {
 									</TableCell>
 									<TableCell className="text-right text-[13px] font-semibold tabular-nums">
 										{med.ppa.toLocaleString("fr-FR")} DA
+									</TableCell>
+									<TableCell className="text-center">
+										{med.taux_tva && med.taux_tva > 0 ? (
+											<span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">
+												TVA {med.taux_tva.toLocaleString("fr-FR")} %
+											</span>
+										) : (
+											<span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+												Hors TVA
+											</span>
+										)}
 									</TableCell>
 									<TableCell className="text-[13px] text-muted-foreground">
 										{med.fabricant ?? "—"}

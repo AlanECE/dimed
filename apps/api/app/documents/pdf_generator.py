@@ -174,6 +174,7 @@ def generate_facture_pdf(
     prelevement_ref: str | None = None,
     visa_preparateur: str | None = None,  # kept for signature compat (unused)
     visa_controleur: str | None = None,  # kept for signature compat (unused)
+    is_proforma: bool = False,
 ) -> Path:
     """Generate a facture PDF mirroring the real Merinal tax-invoice layout.
 
@@ -305,8 +306,9 @@ def generate_facture_pdf(
     )
     sender_p = Paragraph(sender_text, val_style)
 
+    # Tant que la commande n'est pas contrôlée, le document est une proforma.
     ref_cell = [
-        Paragraph("FACTURE", title_hl),
+        Paragraph("FACTURE PROFORMA" if is_proforma else "FACTURE", title_hl),
         Spacer(1, 0.15 * cm),
         Paragraph(f"N° : <font color='#1d3557'>{reference_id}</font>", ref_big),
         Paragraph(f"Date : <b>{date_emission}</b>", val_style),
@@ -418,16 +420,19 @@ def generate_facture_pdf(
     ]
     total_brut = 0.0
     total_lignes_ht = 0.0
+    total_tva = 0.0
     for i, ln in enumerate(lignes, 1):
         qte = float(ln.get("qte", 0) or 0)
         pu_ht = float(ln.get("prix_unitaire", 0) or 0)
         ppa = float(ln.get("ppa", pu_ht) or pu_ht)
         remise_pct = float(ln.get("remise_pct", 0) or 0)
+        taux_tva = float(ln.get("taux_tva", 0) or 0)
         p_detail = pu_ht * (1 - remise_pct / 100)
         montant_ht = qte * p_detail
         brut = qte * pu_ht
         total_brut += brut
         total_lignes_ht += montant_ht
+        total_tva += montant_ht * taux_tva / 100
 
         tbl_data.append(
             [
@@ -442,7 +447,7 @@ def generate_facture_pdf(
                 Paragraph(f"{remise_pct:.2f}", cell_num),
                 Paragraph(f"{p_detail:,.2f}".replace(",", " "), cell_num),
                 Paragraph(f"{montant_ht:,.2f}".replace(",", " "), cell_num),
-                Paragraph("0", cell_center),
+                Paragraph(f"{taux_tva:g}" if taux_tva else "—", cell_center),
             ]
         )
 
@@ -485,7 +490,7 @@ def generate_facture_pdf(
     remise_totale = total_brut - total_lignes_ht
     # Caller might override via `montant_total`; trust the computed one
     # because it's coherent with the table we just drew.
-    net_ttc = total_lignes_ht
+    net_ttc = total_lignes_ht + total_tva
 
     t_label = ParagraphStyle(
         "TotLabel",
@@ -533,7 +538,7 @@ def generate_facture_pdf(
         [Paragraph("Total lignes HT", t_label), Paragraph(_fmt(total_lignes_ht), t_val), ""],
         [Paragraph("Frais / Items", t_label), Paragraph("0,00", t_val), ""],
         [Paragraph("Total HT", t_label), Paragraph(_fmt(total_lignes_ht), t_val), ""],
-        [Paragraph("Montant TVA", t_label), Paragraph("0,00", t_val), ""],
+        [Paragraph("Montant TVA", t_label), Paragraph(_fmt(total_tva), t_val), ""],
         [
             Paragraph("TOTAL TTC", ttc_label),
             Paragraph(_fmt(net_ttc), ttc_val),

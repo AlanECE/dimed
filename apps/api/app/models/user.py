@@ -1,7 +1,7 @@
 import enum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Enum, String, Uuid
+from sqlalchemy import Boolean, Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import AuditMixin, Base
@@ -31,6 +31,11 @@ class User(AuditMixin, Base):
     nom: Mapped[str] = mapped_column(String(255), nullable=False)
     adresse: Mapped[str | None] = mapped_column(String(500), nullable=True)
     secteur: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Ligne de livraison du client (pharmacien) — déterminée à la création de
+    # la fiche ; les commandes en héritent automatiquement à l'acceptation.
+    camion_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("camions.id", ondelete="SET NULL"), nullable=True
+    )
     telephone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     google_id: Mapped[str | None] = mapped_column(
         String(255), unique=True, nullable=True, index=True

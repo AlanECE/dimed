@@ -231,6 +231,108 @@ async def depose_pad_commande(
     }
 
 
+@router.post("/commandes/{commande_id}/zone-expedition")
+async def deposer_zone_expedition(
+    commande_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Magasinier : déplace tous les cartons d'une commande vers la zone d'expédition.
+
+    Pas de choix de pad — le magasinier ne fait que déposer la commande sur la
+    zone de chargement. Les colis passent au statut SUR_PAD (prêts à expédier).
+    """
+    if current_user.role.value not in ("magasinier", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    colis_list = await get_commande_colis(db, commande_id)
+    if not colis_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Aucun colis pour cette commande",
+        )
+
+    commande_result = await db.execute(select(Commande).where(Commande.id == commande_id))
+    commande = commande_result.scalar_one_or_none()
+
+    db.info["actor_id"] = str(current_user.id)
+    deposes: list[str] = []
+    for colis in colis_list:
+        if colis.statut in (ColisStatus.ETIQUETE, ColisStatus.SUR_PAD):
+            colis.pad_tir_id = None
+            colis.statut = ColisStatus.SUR_PAD
+            await log_scan(db, colis, ScanType.DEPOT_PAD, current_user.id)
+            deposes.append(colis.numero)
+    await db.commit()
+
+    return {
+        "status": "ok",
+        "commande_ref": commande.reference_id if commande else None,
+        "nb_colis": len(colis_list),
+        "deposes": deposes,
+    }
+
+
+@router.get("/zone-expedition")
+async def list_zone_expedition(
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> dict:
+    """Commandes actuellement en zone d'expédition (colis SUR_PAD), groupées."""
+    if current_user.role.value not in (
+        "magasinier",
+        "livreur",
+        "controleur",
+        "operatrice",
+        "admin",
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    staged_result = await db.execute(
+        select(Colis, Commande, PadTir)
+        .join(Commande, Colis.commande_id == Commande.id)
+        .outerjoin(PadTir, Colis.pad_tir_id == PadTir.id)
+        .where(Colis.statut == ColisStatus.SUR_PAD)
+    )
+    rows = staged_result.all()
+
+    totals_result = await db.execute(
+        select(Colis.commande_id, func.count()).group_by(Colis.commande_id)
+    )
+    totals_map = {row[0]: row[1] for row in totals_result.all()}
+
+    pharm_ids = {row.Commande.pharmacien_id for row in rows}
+    users_map: dict[UUID, User] = {}
+    if pharm_ids:
+        users_result = await db.execute(select(User).where(User.id.in_(pharm_ids)))
+        users_map = {u.id: u for u in users_result.scalars().all()}
+
+    by_commande: dict[UUID, dict] = {}
+    for row in rows:
+        commande = row.Commande
+        entry = by_commande.setdefault(
+            commande.id,
+            {
+                "commande_id": str(commande.id),
+                "commande_ref": commande.reference_id,
+                "pharmacien_nom": (
+                    users_map[commande.pharmacien_id].nom
+                    if commande.pharmacien_id in users_map
+                    else "—"
+                ),
+                "poses": 0,
+                "total": totals_map.get(commande.id, 0),
+                "zone": None,
+            },
+        )
+        entry["poses"] += 1
+        if row.PadTir is not None:
+            entry["zone"] = {"code": row.PadTir.code, "nom": row.PadTir.nom}
+
+    items = sorted(by_commande.values(), key=lambda c: c["commande_ref"])
+    return {"commandes": items, "total": len(items)}
+
+
 @router.post("/colis/{numero}/scan-chargement")
 async def scan_chargement(
     numero: str,
@@ -245,13 +347,15 @@ async def scan_chargement(
     commande = colis.commande
     await _require_chargement_access(db, current_user, commande)
 
-    if commande.statut != OrderStatus.PRETE:
+    # Le livreur contrôle les cartons en les scannant. La commande doit être prête
+    # (PRETE) ; on tolère EN_ROUTE pour les re-scans après passage en livraison.
+    if commande.statut not in (OrderStatus.PRETE, OrderStatus.EN_ROUTE):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Commande {commande.reference_id} non prête ({commande.statut.value})",
         )
 
-    deja_scanne = colis.statut == ColisStatus.CHARGE
+    deja_scanne = colis.statut in (ColisStatus.CHARGE, ColisStatus.LIVRE)
     if not deja_scanne:
         if colis.statut not in (ColisStatus.ETIQUETE, ColisStatus.SUR_PAD):
             raise HTTPException(
@@ -274,13 +378,18 @@ async def scan_chargement(
     commande_complete = total > 0 and charges == total
 
     if not deja_scanne and commande_complete:
+        # Tous les cartons scannés → la commande passe « en livraison ».
+        if commande.statut == OrderStatus.PRETE:
+            from app.commandes.service import transition_order
+
+            await transition_order(db, commande.id, OrderStatus.EN_ROUTE)
         db.add(
             Notification(
                 id=uuid4(),
                 user_id=commande.pharmacien_id,
                 commande_id=commande.id,
-                type="commande_chargee",
-                message=f"Commande {commande.reference_id} chargée dans le camion",
+                type="commande_en_livraison",
+                message=f"Commande {commande.reference_id} chargée — en cours de livraison",
             )
         )
 

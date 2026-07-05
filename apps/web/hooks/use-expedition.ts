@@ -8,6 +8,7 @@ import type {
 	ScanChargementResult,
 	ScanLivraisonResult,
 	ValidateLoadingResult,
+	ZoneExpeditionCommande,
 } from "@/lib/types";
 import { useCallback } from "react";
 
@@ -43,6 +44,25 @@ export function useExpedition() {
 	const fetchPads = useCallback(async () => {
 		const data = await fetchApi<{ pads: PadOccupation[]; total: number }>("/expedition/pads");
 		return data.pads;
+	}, []);
+
+	// Le magasinier dépose une commande entière en zone d'expédition (sans pad).
+	const deposeZoneExpedition = useCallback(async (commandeId: string) => {
+		return fetchApi<{
+			status: string;
+			commande_ref: string | null;
+			nb_colis: number;
+			deposes: string[];
+		}>(`/expedition/commandes/${encodeURIComponent(commandeId)}/zone-expedition`, {
+			method: "POST",
+		});
+	}, []);
+
+	const fetchZoneExpedition = useCallback(async () => {
+		const data = await fetchApi<{ commandes: ZoneExpeditionCommande[]; total: number }>(
+			"/expedition/zone-expedition",
+		);
+		return data.commandes;
 	}, []);
 
 	const scanChargement = useCallback(async (numero: string) => {
@@ -91,6 +111,8 @@ export function useExpedition() {
 		lookupColis,
 		deposePad,
 		deposePadCommande,
+		deposeZoneExpedition,
+		fetchZoneExpedition,
 		fetchPads,
 		scanChargement,
 		scanLivraison,

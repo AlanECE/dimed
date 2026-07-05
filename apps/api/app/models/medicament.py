@@ -22,6 +22,11 @@ class Medicament(AuditMixin, Base):
     dosage: Mapped[str | None] = mapped_column(String(100), nullable=True)
     forme: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ppa: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    # Taux de TVA du produit (0 = hors TVA — la plupart des médicaments ;
+    # les compléments alimentaires y sont soumis).
+    taux_tva: Mapped[Decimal] = mapped_column(
+        Numeric(4, 2), nullable=False, default=Decimal("0.00"), server_default="0"
+    )
     fabricant: Mapped[str | None] = mapped_column(String(255), nullable=True)
     stock_quantity: Mapped[int] = mapped_column(
         Integer,

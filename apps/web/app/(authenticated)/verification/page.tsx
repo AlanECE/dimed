@@ -2,6 +2,14 @@
 
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
 	Select,
@@ -57,6 +65,7 @@ function VerificationList({ onSelect }: { onSelect: (o: OrderResponse) => void }
 	const { orders: enVerif, loading: loadingVerif } = useOrders({ statut: "en_verification" });
 	const { orders: pretes, loading: loadingPretes } = useOrders({ statut: "prete" });
 	const { downloadEtiquettes } = useExpedition();
+	const [contenuOrder, setContenuOrder] = useState<OrderResponse | null>(null);
 
 	const handleEtiquettes = useCallback(
 		async (order: OrderResponse) => {
@@ -223,15 +232,26 @@ function VerificationList({ onSelect }: { onSelect: (o: OrderResponse) => void }
 											<StatusBadge status={order.statut} />
 										</TableCell>
 										<TableCell className="text-right">
-											<Button
-												variant="outline"
-												size="sm"
-												onClick={() => handleEtiquettes(order)}
-												className="h-8 gap-1.5 rounded-lg text-[12px]"
-											>
-												<QrCode className="h-3.5 w-3.5" />
-												Étiquettes PDF
-											</Button>
+											<div className="flex items-center justify-end gap-1.5">
+												<Button
+													variant="outline"
+													size="sm"
+													onClick={() => setContenuOrder(order)}
+													className="h-8 gap-1.5 rounded-lg text-[12px]"
+												>
+													<Package className="h-3.5 w-3.5" />
+													Contenu
+												</Button>
+												<Button
+													variant="outline"
+													size="sm"
+													onClick={() => handleEtiquettes(order)}
+													className="h-8 gap-1.5 rounded-lg text-[12px]"
+												>
+													<QrCode className="h-3.5 w-3.5" />
+													Étiquettes PDF
+												</Button>
+											</div>
 										</TableCell>
 									</TableRow>
 								))
@@ -240,7 +260,147 @@ function VerificationList({ onSelect }: { onSelect: (o: OrderResponse) => void }
 					</Table>
 				</div>
 			</section>
+
+			<ColisContenuDialog order={contenuOrder} onClose={() => setContenuOrder(null)} />
 		</div>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Contenu des colis — le contrôleur répartit les lignes dans les cartons ;
+// le contenu devient consultable au scan du QR (tablette magasinier/livreur).
+// ---------------------------------------------------------------------------
+
+type ColisSummary = { id: string; numero: string; index_colis: number };
+
+function ColisContenuDialog({
+	order,
+	onClose,
+}: {
+	order: OrderResponse | null;
+	onClose: () => void;
+}) {
+	const [lignes, setLignes] = useState<LignePreparationResponse[]>([]);
+	const [colis, setColis] = useState<ColisSummary[]>([]);
+	const [qty, setQty] = useState<Record<string, Record<string, string>>>({});
+	const [loading, setLoading] = useState(false);
+	const [saving, setSaving] = useState(false);
+
+	useEffect(() => {
+		if (!order) return;
+		setLoading(true);
+		setQty({});
+		Promise.all([
+			fetchApi<{ lignes: LignePreparationResponse[] }>(`/commandes/${order.id}/lignes`),
+			fetchApi<{ colis: ColisSummary[] }>(`/expedition/commandes/${order.id}/colis`),
+		])
+			.then(([lignesRes, colisRes]) => {
+				setLignes(lignesRes.lignes);
+				setColis(colisRes.colis);
+			})
+			.catch((err) => {
+				toast.error(err instanceof Error ? err.message : "Erreur de chargement");
+				onClose();
+			})
+			.finally(() => setLoading(false));
+	}, [order, onClose]);
+
+	const handleSave = useCallback(async () => {
+		if (!order) return;
+		const repartition = colis
+			.map((k) => ({
+				colis_id: k.id,
+				lignes: lignes
+					.map((l) => ({
+						ligne_id: l.id,
+						quantite: Number.parseInt(qty[k.id]?.[l.id] ?? "", 10) || 0,
+					}))
+					.filter((entry) => entry.quantite >= 1),
+			}))
+			.filter((item) => item.lignes.length > 0);
+
+		setSaving(true);
+		try {
+			await fetchApi(`/expedition/commandes/${order.id}/repartition`, {
+				method: "PUT",
+				body: JSON.stringify({ repartition }),
+			});
+			toast.success(`Contenu des colis enregistré (${order.reference_id})`);
+			onClose();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Erreur d'enregistrement");
+		} finally {
+			setSaving(false);
+		}
+	}, [order, colis, lignes, qty, onClose]);
+
+	return (
+		<Dialog open={!!order} onOpenChange={(open) => !open && onClose()}>
+			<DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+				<DialogHeader>
+					<DialogTitle>Contenu des colis — {order?.reference_id}</DialogTitle>
+					<DialogDescription>
+						Indiquez la quantité de chaque article placée dans chaque carton. Le contenu sera
+						visible à la lecture du QR code du colis.
+					</DialogDescription>
+				</DialogHeader>
+
+				{loading ? (
+					<div className="flex flex-col gap-3">
+						{Array.from({ length: 3 }).map((_, i) => (
+							<Skeleton key={`ct-sk-${i}`} className="h-16 rounded-xl" />
+						))}
+					</div>
+				) : (
+					<div className="flex flex-col gap-4">
+						{colis.map((k) => (
+							<div key={k.id} className="rounded-xl border border-border/60 bg-muted/20 p-3">
+								<p className="mb-2 flex items-center gap-2 font-mono text-[13px] font-bold">
+									<Package className="h-4 w-4 text-violet-600" />
+									{k.numero}
+									<span className="font-sans text-[11px] font-medium text-muted-foreground">
+										Carton {k.index_colis} / {colis.length}
+									</span>
+								</p>
+								<div className="flex flex-col gap-1.5">
+									{lignes.map((l) => (
+										<div
+											key={`${k.id}-${l.id}`}
+											className="flex items-center justify-between gap-3"
+										>
+											<span className="truncate text-[13px]">{l.designation}</span>
+											<Input
+												type="number"
+												min={0}
+												placeholder="0"
+												value={qty[k.id]?.[l.id] ?? ""}
+												onChange={(e) =>
+													setQty((prev) => ({
+														...prev,
+														[k.id]: { ...prev[k.id], [l.id]: e.target.value },
+													}))
+												}
+												className="h-8 w-20 text-right text-[13px]"
+											/>
+										</div>
+									))}
+								</div>
+							</div>
+						))}
+					</div>
+				)}
+
+				<DialogFooter>
+					<Button variant="outline" onClick={onClose}>
+						Annuler
+					</Button>
+					<Button onClick={handleSave} disabled={saving || loading} className="gap-1.5">
+						{saving && <Loader2 className="h-4 w-4 animate-spin" />}
+						Enregistrer le contenu
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }
 

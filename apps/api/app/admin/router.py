@@ -99,6 +99,9 @@ async def update_user(
             user.is_active = body.is_active
         if body.nom is not None:
             user.nom = body.nom
+        if "camion_id" in body.model_fields_set:
+            # Ligne de livraison de la fiche client (None = désassigner).
+            user.camion_id = body.camion_id
 
         await db.commit()
         await db.refresh(user)
