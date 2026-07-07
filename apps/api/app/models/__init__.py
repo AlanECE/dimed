@@ -7,6 +7,12 @@ from app.models.colis import Colis, ColisLigne, ColisStatus, PadTir, ScanColis, 
 from app.models.commande import Commande, LigneCommande, OrderStatus
 from app.models.document import BonDeLivraison, Facture, FeuilleDeRoute
 from app.models.medicament import Medicament
+from app.models.pharmacie import (
+    ArrivagePharmacien,
+    ArrivagePharmacienLigne,
+    ArrivageSource,
+    StockPharmacien,
+)
 from app.models.references import (
     next_bl_ref,
     next_colis_ref,
@@ -32,6 +38,10 @@ __all__ = [
     "BonDeLivraison",
     "FeuilleDeRoute",
     "Arrivage",
+    "ArrivagePharmacien",
+    "ArrivagePharmacienLigne",
+    "ArrivageSource",
+    "StockPharmacien",
     "AuditLog",
     "Vignette",
     "Colis",

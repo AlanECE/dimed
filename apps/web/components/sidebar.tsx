@@ -6,7 +6,9 @@ import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 import {
 	BarChart3,
+	Boxes,
 	CheckCircle,
+	ChevronDown,
 	ClipboardList,
 	FileText,
 	LayoutDashboard,
@@ -29,19 +31,44 @@ import {
 	Wallet,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
-type NavItem = { href: string; label: string; icon: LucideIcon };
+type NavChild = { href: string; label: string };
+type NavItem = { href: string; label: string; icon: LucideIcon; children?: NavChild[] };
+
+const DOCUMENTS_CHILDREN_BASE: NavChild[] = [
+	{ href: "/documents?tab=factures", label: "Factures" },
+	{ href: "/documents?tab=bls", label: "Bons de livraison" },
+	{ href: "/documents?tab=proforma", label: "Proforma" },
+];
+
+const DOCUMENTS_ITEM_PHARMACIEN: NavItem = {
+	href: "/documents",
+	label: "Documents",
+	icon: FileText,
+	children: DOCUMENTS_CHILDREN_BASE,
+};
+
+const DOCUMENTS_ITEM_OPERATRICE: NavItem = {
+	href: "/documents",
+	label: "Documents",
+	icon: FileText,
+	children: [
+		...DOCUMENTS_CHILDREN_BASE,
+		{ href: "/documents?tab=feuilles", label: "Feuilles de route" },
+	],
+};
 
 const NAV_ITEMS: Record<string, NavItem[]> = {
 	pharmacien: [
 		{ href: "/catalogue", label: "Catalogue", icon: Package },
 		{ href: "/commandes", label: "Mes Commandes", icon: ClipboardList },
-		{ href: "/facturation", label: "Facturation", icon: Receipt },
+		{ href: "/pharmacie/arrivages", label: "Arrivage", icon: PackagePlus },
+		{ href: "/pharmacie/stock", label: "Stock", icon: Boxes },
 		{ href: "/creances", label: "Créances", icon: Wallet },
 		{ href: "/reclamations", label: "Réclamations", icon: MessageSquareWarning },
-		{ href: "/documents", label: "Documents", icon: FileText },
+		DOCUMENTS_ITEM_PHARMACIEN,
 		{ href: "/rapports", label: "Statistiques", icon: BarChart3 },
 	],
 	operatrice: [
@@ -50,10 +77,9 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
 		{ href: "/dashboard/routes", label: "Feuilles de route", icon: Route },
 		{ href: "/dashboard/camions", label: "Lignes de route", icon: Route },
 		{ href: "/arrivages", label: "Arrivages", icon: PackagePlus },
-		{ href: "/facturation", label: "Facturation", icon: Receipt },
 		{ href: "/creances", label: "Créances", icon: Wallet },
 		{ href: "/reclamations", label: "Réclamations", icon: MessageSquareWarning },
-		{ href: "/documents", label: "Documents", icon: FileText },
+		DOCUMENTS_ITEM_OPERATRICE,
 		{ href: "/rapports", label: "Rapports", icon: BarChart3 },
 	],
 	preparateur: [{ href: "/preparation", label: "Préparation", icon: Package }],
@@ -71,10 +97,9 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
 		{ href: "/dashboard/routes", label: "Feuilles de route", icon: Route },
 		{ href: "/dashboard/camions", label: "Lignes de route", icon: Route },
 		{ href: "/arrivages", label: "Arrivages", icon: PackagePlus },
-		{ href: "/facturation", label: "Facturation", icon: Receipt },
 		{ href: "/creances", label: "Créances", icon: Wallet },
 		{ href: "/reclamations", label: "Réclamations", icon: MessageSquareWarning },
-		{ href: "/documents", label: "Documents", icon: FileText },
+		DOCUMENTS_ITEM_OPERATRICE,
 		{ href: "/rapports", label: "Rapports", icon: BarChart3 },
 		{ href: "/admin/catalogue", label: "Produits vedettes", icon: PackagePlus },
 		{ href: "/admin/utilisateurs", label: "Utilisateurs", icon: Users },
@@ -96,9 +121,19 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export function Sidebar() {
+	return (
+		<Suspense>
+			<SidebarInner />
+		</Suspense>
+	);
+}
+
+function SidebarInner() {
 	const pathname = usePathname();
+	const searchParams = useSearchParams();
 	const { user, logout } = useAuth();
 	const [collapsed, setCollapsed] = useState(false);
+	const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
 	useEffect(() => {
 		const stored = localStorage.getItem(COLLAPSED_KEY);
@@ -124,6 +159,16 @@ export function Sidebar() {
 	function isActive(href: string) {
 		if (href === "/dashboard") return pathname === "/dashboard";
 		return pathname.startsWith(href);
+	}
+
+	// Un sous-lien "/documents?tab=x" est actif si on est sur /documents avec ce tab
+	// (le premier sous-lien l'est aussi sans tab explicite).
+	function isChildActive(child: NavChild, index: number) {
+		const [childPath, childQuery] = child.href.split("?");
+		if (pathname !== childPath) return false;
+		const childTab = new URLSearchParams(childQuery).get("tab");
+		const currentTab = searchParams.get("tab");
+		return currentTab === childTab || (currentTab === null && index === 0);
 	}
 
 	return (
@@ -165,8 +210,69 @@ export function Sidebar() {
 
 			{/* Navigation */}
 			<nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
-				{navItems.map((item, i) => {
+				{navItems.map((item) => {
 					const active = isActive(item.href);
+					const hasChildren = !collapsed && item.children && item.children.length > 0;
+					const groupOpen = openGroups[item.href] ?? active;
+
+					if (hasChildren) {
+						return (
+							<div key={item.href}>
+								<button
+									type="button"
+									onClick={() => setOpenGroups((prev) => ({ ...prev, [item.href]: !groupOpen }))}
+									className={cn(
+										"group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200",
+										active
+											? "bg-sidebar-accent text-white"
+											: "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+									)}
+									aria-expanded={groupOpen}
+								>
+									{active && (
+										<span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-sidebar-primary transition-all" />
+									)}
+									<item.icon
+										className={cn(
+											"h-[18px] w-[18px] shrink-0 transition-colors",
+											active
+												? "text-sidebar-primary"
+												: "text-sidebar-foreground/40 group-hover:text-sidebar-foreground/70",
+										)}
+									/>
+									<span className="flex-1 text-left">{item.label}</span>
+									<ChevronDown
+										className={cn(
+											"h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+											groupOpen && "rotate-180",
+										)}
+									/>
+								</button>
+								{groupOpen && (
+									<div className="ml-[26px] mt-0.5 space-y-0.5 border-l border-sidebar-border pl-3">
+										{item.children?.map((child, childIndex) => {
+											const childActive = isChildActive(child, childIndex);
+											return (
+												<Link
+													key={child.href}
+													href={child.href}
+													className={cn(
+														"block rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors",
+														childActive
+															? "bg-sidebar-accent text-white"
+															: "text-sidebar-foreground/50 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/80",
+													)}
+												>
+													{child.label}
+												</Link>
+											);
+										})}
+									</div>
+								)}
+							</div>
+						);
+					}
+
 					return (
 						<Link
 							key={item.href}

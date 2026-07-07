@@ -136,6 +136,92 @@ async def list_bons_livraison(
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
+@router.get("/proformas")
+async def list_proformas(
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    """List commandes for which a proforma can be issued.
+
+    Contrairement à la facture (émise à la validation opératrice), la
+    proforma est disponible pour toute commande non annulée, générée à la
+    volée depuis l'état courant des lignes.
+    """
+    if current_user.role.value not in ("pharmacien", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    query = select(Commande).where(Commande.statut != OrderStatus.ANNULEE)
+
+    if current_user.role.value == "pharmacien":
+        query = query.where(Commande.pharmacien_id == current_user.id)
+
+    if date_from:
+        query = query.where(Commande.created_at >= date_from)
+    if date_to:
+        query = query.where(Commande.created_at <= datetime.combine(date_to, time.max))
+
+    count_q = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_q)).scalar() or 0
+
+    query = query.order_by(Commande.created_at.desc()).offset(offset).limit(min(limit, 100))
+    result = await db.execute(query)
+    commandes = list(result.scalars().all())
+
+    pharmacien_ids = {c.pharmacien_id for c in commandes}
+    pharmacien_map: dict = {}
+    if pharmacien_ids:
+        users_result = await db.execute(select(User).where(User.id.in_(pharmacien_ids)))
+        pharmacien_map = {u.id: u.nom for u in users_result.scalars().all()}
+
+    items = [
+        {
+            "commande_id": str(c.id),
+            "reference_id": f"PRO-{c.reference_id}",
+            "commande_reference": c.reference_id,
+            "pharmacien_nom": pharmacien_map.get(c.pharmacien_id, "—"),
+            "date": c.created_at.isoformat(),
+            "montant_total": float(c.montant_total),
+            "statut": c.statut.value if hasattr(c.statut, "value") else c.statut,
+        }
+        for c in commandes
+    ]
+
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+@router.get("/proforma/{commande_id}")
+async def download_proforma(
+    commande_id: UUID,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> FileResponse:
+    """Generate and download the proforma PDF for a commande (any status)."""
+    if current_user.role.value not in ("pharmacien", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    cmd_result = await db.execute(select(Commande).where(Commande.id == commande_id))
+    commande = cmd_result.scalar_one_or_none()
+    if not commande:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Commande not found")
+
+    if current_user.role.value == "pharmacien" and commande.pharmacien_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your order")
+
+    from app.documents.service import generate_proforma_pdf
+
+    path = await generate_proforma_pdf(db, commande)
+
+    return FileResponse(
+        path=str(path),
+        media_type="application/pdf",
+        filename=f"proforma_{commande.reference_id}.pdf",
+    )
+
+
 @router.get("/facture/{commande_id}")
 async def download_facture(
     commande_id: UUID,
@@ -240,8 +326,8 @@ async def download_bl(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> FileResponse:
-    if current_user.role.value not in ("operatrice", "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operatrice/admin only")
+    if current_user.role.value not in ("pharmacien", "operatrice", "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     result = await db.execute(
         select(BonDeLivraison).where(BonDeLivraison.commande_id == commande_id)
@@ -249,6 +335,13 @@ async def download_bl(
     bl = result.scalar_one_or_none()
     if not bl:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="BL not found")
+
+    # Pharmacien can only access own order's BL
+    if current_user.role.value == "pharmacien":
+        cmd_result = await db.execute(select(Commande).where(Commande.id == commande_id))
+        commande = cmd_result.scalar_one_or_none()
+        if not commande or commande.pharmacien_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your order")
 
     file_path = (STORAGE_ROOT / "bls" / f"{bl.code_barre}.pdf").resolve()
     if not file_path.is_relative_to(STORAGE_ROOT.resolve()):
@@ -391,6 +484,21 @@ async def get_today_route_sheet(
         users_result = await db.execute(select(User).where(User.id.in_(pharm_ids)))
         users_map = {u.id: u for u in users_result.scalars().all()}
 
+    # Pads de tir : chaque commande est déposée par le magasinier sur un pad —
+    # le livreur doit savoir où récupérer ses colis.
+    from app.models.colis import Colis, PadTir
+
+    pads_by_commande: dict[UUID, list[dict]] = {}
+    if commandes:
+        pads_result = await db.execute(
+            select(Colis.commande_id, PadTir.code, PadTir.nom)
+            .join(PadTir, Colis.pad_tir_id == PadTir.id)
+            .where(Colis.commande_id.in_([c.id for c in commandes]))
+            .distinct()
+        )
+        for commande_id, pad_code, pad_nom in pads_result.all():
+            pads_by_commande.setdefault(commande_id, []).append({"code": pad_code, "nom": pad_nom})
+
     return {
         "feuille": {
             "id": str(feuille.id),
@@ -420,6 +528,7 @@ async def get_today_route_sheet(
                     ),
                     "statut": c.statut.value,
                     "signature_pharmacien": c.signature_pharmacien is not None,
+                    "pads_tir": pads_by_commande.get(c.id, []),
                 }
                 for c in commandes
             ],

@@ -2,6 +2,7 @@ import logging
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -84,17 +85,6 @@ async def _load_commande_pdf_context(
     return pharmacien, lignes_data
 
 
-# Tant que le contrôle n'est pas validé, le document émis est une proforma —
-# la facture ne devient définitive qu'une fois la commande PRETE (contrôlée).
-_PROFORMA_STATUSES = {
-    OrderStatus.CREEE,
-    OrderStatus.ACCEPTEE,
-    OrderStatus.EN_PREPARATION,
-    OrderStatus.PRELEVEE_PARTIELLEMENT,
-    OrderStatus.EN_VERIFICATION,
-}
-
-
 def _montant_tva(lignes_data: list[dict]) -> Decimal:
     total = sum(
         Decimal(str(ln["total"])) * Decimal(str(ln.get("taux_tva", 0))) / Decimal("100")
@@ -124,7 +114,40 @@ def _render_facture_pdf(
         montant_total=float(commande.montant_total),
         visa_preparateur=commande.visa_preparateur,
         visa_controleur=commande.visa_controleur,
-        is_proforma=commande.statut in _PROFORMA_STATUSES,
+        # Une Facture n'existe qu'après validation par l'opératrice : c'est un
+        # document définitif. La proforma est un document distinct, générée à
+        # la volée via generate_proforma_pdf.
+        is_proforma=False,
+    )
+
+
+async def generate_proforma_pdf(db: AsyncSession, commande: Commande) -> Path:
+    """Render an on-the-fly FACTURE PROFORMA for a commande (never persisted).
+
+    The proforma reflects the current state of the order lines and is
+    available at any stage of the workflow, unlike the facture which only
+    exists once the opératrice has validated the order.
+    """
+    pharmacien, lignes_data = await _load_commande_pdf_context(db, commande)
+
+    bl_result = await db.execute(
+        select(BonDeLivraison.code_barre).where(BonDeLivraison.commande_id == commande.id)
+    )
+    bl_ref = bl_result.scalar_one_or_none()
+
+    return generate_facture_pdf(
+        reference_id=f"PRO-{commande.reference_id}",
+        date_emission=datetime.now(UTC).strftime("%d/%m/%Y"),
+        client_nom=pharmacien.nom if pharmacien else "N/A",
+        client_adresse=pharmacien.adresse if pharmacien else None,
+        client_telephone=pharmacien.telephone if pharmacien else None,
+        client_secteur=pharmacien.secteur if pharmacien else None,
+        commercial=commande.commercial,
+        commande_ref=commande.reference_id,
+        prelevement_ref=bl_ref,
+        lignes=lignes_data,
+        montant_total=float(commande.montant_total),
+        is_proforma=True,
     )
 
 

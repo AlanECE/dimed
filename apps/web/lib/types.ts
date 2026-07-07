@@ -164,6 +164,16 @@ export type BonLivraisonListItem = {
 	date_emission: string;
 };
 
+export type ProformaListItem = {
+	commande_id: string;
+	reference_id: string;
+	commande_reference: string;
+	pharmacien_nom: string;
+	date: string;
+	montant_total: number;
+	statut: string;
+};
+
 export type ReclamationResponse = {
 	id: string;
 	pharmacien_nom: string;
@@ -316,6 +326,8 @@ export type RouteSheetTodayCommande = {
 	pharmacien_secteur: string | null;
 	statut: string;
 	signature_pharmacien: boolean;
+	/** Pads de tir où le magasinier a déposé les colis de la commande. */
+	pads_tir: { code: string; nom: string }[];
 };
 
 export type RouteSheetToday = {

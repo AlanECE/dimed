@@ -36,7 +36,7 @@ import type { MedicamentResponse, OrderDetailResponse } from "@/lib/types";
 import { ArrowLeft, Check, Loader2, Plus, Save, Search, Trash2, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 type CamionOption = { id: string; nom: string; plaque: string };
@@ -47,6 +47,9 @@ export default function OperatorOrderDetailPage() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [accepting, setAccepting] = useState(false);
+	// Garde synchrone : un double-clic ne doit jamais envoyer deux PATCH /accept
+	// (la 2ème requête déclencherait à tort le popup « Commande déjà validée »).
+	const acceptingRef = useRef(false);
 	const [refusing, setRefusing] = useState(false);
 	const [refuseMotif, setRefuseMotif] = useState("");
 	const [camions, setCamions] = useState<CamionOption[]>([]);
@@ -90,6 +93,8 @@ export default function OperatorOrderDetailPage() {
 	}, []);
 
 	async function handleAccept() {
+		if (acceptingRef.current) return;
+		acceptingRef.current = true;
 		setAccepting(true);
 		try {
 			await fetchApi(`/commandes/${id}/accept`, { method: "PATCH" });
@@ -98,6 +103,7 @@ export default function OperatorOrderDetailPage() {
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Erreur");
 		} finally {
+			acceptingRef.current = false;
 			setAccepting(false);
 		}
 	}

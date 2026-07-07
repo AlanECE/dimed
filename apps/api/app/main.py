@@ -22,6 +22,7 @@ from app.expedition.router import router as expedition_router
 from app.medicaments.router import router as medicaments_router
 from app.models.user import User, UserRole
 from app.notifications.router import router as notifications_router
+from app.pharmacie.router import router as pharmacie_router
 from app.reclamations.router import router as reclamations_router
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,7 @@ app.include_router(creances_router, prefix="/creances", tags=["creances"])
 app.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
 app.include_router(reclamations_router, prefix="/reclamations", tags=["reclamations"])
 app.include_router(arrivages_router, prefix="/arrivages", tags=["arrivages"])
+app.include_router(pharmacie_router, prefix="/pharmacie", tags=["pharmacie"])
 
 
 # Serve uploaded images

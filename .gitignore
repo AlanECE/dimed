@@ -32,7 +32,12 @@ OCR/
 *.PNG
 *.png
 apps/storage/documents/
+apps/storage/images/
+CR_*.pdf
 
 # Personal / temp files
 a faire.md
 .~lock.*
+*.log
+dump.local.bak
+docker/docker-compose.override.yml
