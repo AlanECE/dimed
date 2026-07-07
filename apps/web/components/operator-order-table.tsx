@@ -28,14 +28,20 @@ import { useCallback, useMemo, useState } from "react";
 
 const PAGE_SIZE = 20;
 
+// Les valeurs correspondent exactement à l'enum OrderStatus du backend.
 const STATUS_OPTIONS = [
 	{ value: "all", label: "Toutes" },
 	{ value: "creee", label: "Créée" },
 	{ value: "acceptee", label: "Acceptée" },
 	{ value: "en_preparation", label: "En préparation" },
-	{ value: "prete_a_livrer", label: "Prête à livrer" },
-	{ value: "en_livraison", label: "En livraison" },
+	{ value: "prelevee_partiellement", label: "Prélevée partiellement" },
+	{ value: "en_verification", label: "En vérification" },
+	{ value: "prete", label: "Prête à livrer" },
+	{ value: "en_route", label: "En livraison" },
 	{ value: "livree", label: "Livrée" },
+	{ value: "livree_partiellement", label: "Livrée partiellement" },
+	{ value: "refusee", label: "Refusée" },
+	{ value: "retournee", label: "Retournée" },
 	{ value: "annulee", label: "Annulée" },
 ];
 
@@ -50,7 +56,8 @@ export function OperatorOrderTable({ defaultStatus }: OperatorOrderTableProps) {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 
-	const statut = defaultStatus ?? searchParams.get("statut") ?? "creee";
+	// L'URL prime : le Select et les cartes KPI écrivent tous deux ?statut=.
+	const statut = searchParams.get("statut") ?? defaultStatus ?? "all";
 	const dateFrom = searchParams.get("date_from") ?? "";
 	const dateTo = searchParams.get("date_to") ?? "";
 	const page = Number(searchParams.get("page") ?? "0");

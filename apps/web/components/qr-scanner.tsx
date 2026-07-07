@@ -68,7 +68,11 @@ export function QrScanner({
 			}
 			try {
 				const stream = await navigator.mediaDevices.getUserMedia({
-					video: { facingMode: { ideal: "environment" } },
+					video: {
+						facingMode: { ideal: "environment" },
+						width: { ideal: 1280 },
+						height: { ideal: 720 },
+					},
 					audio: false,
 				});
 				if (cancelled) {
@@ -76,6 +80,18 @@ export function QrScanner({
 					return;
 				}
 				streamRef.current = stream;
+				// Autofocus continu quand la caméra le supporte : net plus vite,
+				// donc décodage plus rapide.
+				const [track] = stream.getVideoTracks();
+				if (track) {
+					try {
+						await track.applyConstraints({
+							advanced: [{ focusMode: "continuous" } as unknown as MediaTrackConstraintSet],
+						});
+					} catch {
+						// focusMode non supporté — ignoré
+					}
+				}
 				if (videoRef.current) {
 					videoRef.current.srcObject = stream;
 					await videoRef.current.play().catch(() => {});
@@ -101,24 +117,32 @@ export function QrScanner({
 		};
 	}, []);
 
-	// Decode loop
+	// Decode loop — sous-échantillonné (≤ 640px) pour décoder chaque frame
+	// sans saturer le CPU, et lecture des QR normaux ET inversés
+	// (attemptBoth = clair-sur-sombre et sombre-sur-clair).
 	useEffect(() => {
+		const MAX_DIM = 640;
 		const tick = () => {
 			rafRef.current = requestAnimationFrame(tick);
 			if (pausedRef.current) return;
 			const video = videoRef.current;
 			const canvas = canvasRef.current;
 			if (!video || !canvas || video.readyState < video.HAVE_ENOUGH_DATA) return;
-			const w = video.videoWidth;
-			const h = video.videoHeight;
-			if (!w || !h) return;
-			canvas.width = w;
-			canvas.height = h;
+			const vw = video.videoWidth;
+			const vh = video.videoHeight;
+			if (!vw || !vh) return;
+			const scale = Math.min(1, MAX_DIM / Math.max(vw, vh));
+			const w = Math.round(vw * scale);
+			const h = Math.round(vh * scale);
+			if (canvas.width !== w || canvas.height !== h) {
+				canvas.width = w;
+				canvas.height = h;
+			}
 			const ctx = canvas.getContext("2d", { willReadFrequently: true });
 			if (!ctx) return;
 			ctx.drawImage(video, 0, 0, w, h);
 			const imageData = ctx.getImageData(0, 0, w, h);
-			const result = jsQR(imageData.data, w, h, { inversionAttempts: "dontInvert" });
+			const result = jsQR(imageData.data, w, h, { inversionAttempts: "attemptBoth" });
 			if (result?.data) emit(result.data);
 		};
 		rafRef.current = requestAnimationFrame(tick);
@@ -133,14 +157,15 @@ export function QrScanner({
 
 	return (
 		<div className={`flex flex-col gap-3 ${className ?? ""}`}>
-			<div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-black">
+			{/* Viseur vertical (portrait) : plus naturel à main levée sur téléphone/tablette. */}
+			<div className="relative mx-auto aspect-[3/4] w-full max-w-sm overflow-hidden rounded-xl bg-black">
 				{/* biome-ignore lint/a11y/useMediaCaption: viewfinder */}
 				<video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
 				{/* Viewfinder frame */}
 				{!error && !starting && (
 					<div className="pointer-events-none absolute inset-0 flex items-center justify-center">
 						<div
-							className={`h-3/5 w-3/5 rounded-2xl border-2 transition-colors duration-200 ${
+							className={`h-2/5 w-3/4 rounded-2xl border-2 transition-colors duration-200 ${
 								flash
 									? "border-emerald-400 shadow-[0_0_30px_rgba(52,211,153,0.6)]"
 									: "border-white/60"

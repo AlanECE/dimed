@@ -551,6 +551,20 @@ async def accept_order(
     if current_user.role.value not in ("operatrice", "admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Operatrice/admin only")
 
+    # Message explicite pour une vraie double validation (au lieu du générique
+    # "Invalid transition: acceptee → acceptee").
+    statut_result = await db.execute(select(Commande.statut).where(Commande.id == commande_id))
+    statut_actuel = statut_result.scalar_one_or_none()
+    if statut_actuel is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if statut_actuel != OrderStatus.CREEE:
+        detail = (
+            "Commande annulée : validation impossible."
+            if statut_actuel == OrderStatus.ANNULEE
+            else "Commande déjà validée."
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
     db.info["actor_id"] = str(current_user.id)
     commande = await transition_order(db, commande_id, OrderStatus.ACCEPTEE, current_user.id)
 
@@ -1395,6 +1409,8 @@ def _vignette_to_dict(v) -> dict | None:
 
 
 def _compute_warnings(extraction, ligne, medicament_ppa) -> list[VignetteWarning]:
+    # Le PPA lu sur la vignette fait foi : aucune alerte de divergence avec le
+    # prix catalogue (medicament_ppa reste exposé à titre indicatif).
     warnings: list[VignetteWarning] = []
     if extraction.lot is None and not ligne.n_lot:
         warnings.append(VignetteWarning.MISSING_LOT)
@@ -1404,12 +1420,6 @@ def _compute_warnings(extraction, ligne, medicament_ppa) -> list[VignetteWarning
         warnings.append(VignetteWarning.MISSING_EXP)
     if extraction.ppa is None and ligne.ppa is None:
         warnings.append(VignetteWarning.MISSING_PPA)
-    elif (
-        extraction.ppa is not None
-        and medicament_ppa is not None
-        and extraction.ppa != medicament_ppa
-    ):
-        warnings.append(VignetteWarning.PPA_DIVERGENT)
     return warnings
 
 

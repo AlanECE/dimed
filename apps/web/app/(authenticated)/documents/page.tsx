@@ -1,6 +1,7 @@
 "use client";
 
 import { FactureTable } from "@/components/facture-table";
+import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -12,27 +13,43 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { useBonsLivraison } from "@/hooks/use-bons-livraison";
+import { useProformas } from "@/hooks/use-proformas";
 import { useRouteSheets } from "@/hooks/use-route-sheets";
 import { API_BASE } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Download, FileStack } from "lucide-react";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
-type Tab = "factures" | "bls" | "feuilles";
+type Tab = "factures" | "bls" | "proforma" | "feuilles";
 
 const SKELETON_ROWS = ["row-1", "row-2", "row-3", "row-4"] as const;
 const SKELETON_CELLS = ["cell-1", "cell-2", "cell-3", "cell-4"] as const;
 
 export default function DocumentsPage() {
+	return (
+		<Suspense>
+			<DocumentsPageInner />
+		</Suspense>
+	);
+}
+
+function DocumentsPageInner() {
 	const { user } = useAuth();
+	const router = useRouter();
+	const searchParams = useSearchParams();
 	const canSeeRouteSheets = user?.role === "operatrice" || user?.role === "admin";
 	const tabs = [
 		["factures", "Factures"],
 		["bls", "Bons de livraison"],
+		["proforma", "Proforma"],
 		...(canSeeRouteSheets ? ([["feuilles", "Feuilles de route"]] as const) : []),
 	] as const;
-	const [tab, setTab] = useState<Tab>("factures");
+
+	const validTabs = tabs.map(([key]) => key) as readonly string[];
+	const paramTab = searchParams.get("tab");
+	const tab: Tab = paramTab && validTabs.includes(paramTab) ? (paramTab as Tab) : "factures";
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -43,7 +60,7 @@ export default function DocumentsPage() {
 				<div>
 					<h2 className="font-heading text-xl font-bold">Centre de documents</h2>
 					<p className="text-[13px] text-muted-foreground">
-						Factures, bons de livraison et feuilles de route
+						Factures, bons de livraison et proformas
 					</p>
 				</div>
 			</div>
@@ -54,7 +71,7 @@ export default function DocumentsPage() {
 					<button
 						key={key}
 						type="button"
-						onClick={() => setTab(key)}
+						onClick={() => router.push(`/documents?tab=${key}`)}
 						className={cn(
 							"rounded-md px-4 py-2 text-[13px] font-medium transition-colors",
 							tab === key
@@ -69,7 +86,111 @@ export default function DocumentsPage() {
 
 			{tab === "factures" && <FactureTable />}
 			{tab === "bls" && <BLsTab />}
+			{tab === "proforma" && <ProformaTab />}
 			{tab === "feuilles" && canSeeRouteSheets && <FeuillesTab />}
+		</div>
+	);
+}
+
+function ProformaTab() {
+	const { user } = useAuth();
+	const { proformas, loading } = useProformas();
+	const isPharmacien = user?.role === "pharmacien";
+
+	return (
+		<div className="flex flex-col gap-3">
+			<p className="text-[12px] text-muted-foreground">
+				La proforma reflète l'état actuel de la commande. La facture définitive n'est émise qu'après
+				validation de la commande par l'opératrice.
+			</p>
+			<div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
+				<Table>
+					<TableHeader>
+						<TableRow className="border-border/40 bg-muted/40 hover:bg-muted/40">
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Référence
+							</TableHead>
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Commande
+							</TableHead>
+							{!isPharmacien && (
+								<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+									Pharmacien
+								</TableHead>
+							)}
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Date
+							</TableHead>
+							<TableHead className="text-right text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Montant
+							</TableHead>
+							<TableHead className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+								Statut
+							</TableHead>
+							<TableHead className="w-14" />
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{loading ? (
+							SKELETON_ROWS.map((rowKey) => (
+								<TableRow key={rowKey} className="border-border/30">
+									{SKELETON_CELLS.map((cellKey) => (
+										<TableCell key={`${rowKey}-${cellKey}`}>
+											<Skeleton className="h-4 w-full" />
+										</TableCell>
+									))}
+								</TableRow>
+							))
+						) : proformas.length === 0 ? (
+							<TableRow>
+								<TableCell
+									colSpan={isPharmacien ? 6 : 7}
+									className="py-12 text-center text-[13px] text-muted-foreground"
+								>
+									Aucune proforma
+								</TableCell>
+							</TableRow>
+						) : (
+							proformas.map((p) => (
+								<TableRow key={p.commande_id} className="border-border/30 hover:bg-muted/40">
+									<TableCell className="font-mono text-[13px]">{p.reference_id}</TableCell>
+									<TableCell className="font-mono text-[13px] text-muted-foreground">
+										{p.commande_reference}
+									</TableCell>
+									{!isPharmacien && (
+										<TableCell className="text-[13px]">{p.pharmacien_nom}</TableCell>
+									)}
+									<TableCell className="text-[13px] text-muted-foreground">
+										{new Date(p.date).toLocaleDateString("fr-FR")}
+									</TableCell>
+									<TableCell className="text-right text-[13px] font-semibold tabular-nums">
+										{p.montant_total.toLocaleString("fr-FR")} DA
+									</TableCell>
+									<TableCell>
+										<StatusBadge status={p.statut} />
+									</TableCell>
+									<TableCell>
+										<a
+											href={`${API_BASE}/documents/proforma/${p.commande_id}`}
+											target="_blank"
+											rel="noopener noreferrer"
+										>
+											<Button
+												variant="ghost"
+												size="icon"
+												className="h-8 w-8 rounded-lg text-primary/70 hover:bg-primary/10 hover:text-primary"
+												aria-label="Télécharger la proforma"
+											>
+												<Download className="h-4 w-4" />
+											</Button>
+										</a>
+									</TableCell>
+								</TableRow>
+							))
+						)}
+					</TableBody>
+				</Table>
+			</div>
 		</div>
 	);
 }

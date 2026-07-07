@@ -407,6 +407,51 @@ export default function LivraisonPage() {
 						</span>
 					</div>
 
+					{/* Où récupérer les colis : pad de tir assigné par le magasinier */}
+					<div className="overflow-hidden rounded-xl border border-violet-200 bg-violet-50/50">
+						<div className="flex items-center gap-2 border-b border-violet-200/60 px-4 py-2.5">
+							<MapPin className="h-4 w-4 text-violet-600" />
+							<span className="text-[13px] font-semibold text-violet-900">
+								Où récupérer les colis — pads de tir
+							</span>
+						</div>
+						<div className="flex flex-col divide-y divide-violet-200/40">
+							{pretesOrders.map((order) => (
+								<div
+									key={`pad-${order.id}`}
+									className="flex items-center justify-between gap-3 px-4 py-2"
+								>
+									<div className="min-w-0">
+										<span className="font-mono text-[12px] font-semibold">
+											{order.reference_id}
+										</span>
+										<span className="ml-2 truncate text-[12px] text-muted-foreground">
+											{order.pharmacien_nom}
+										</span>
+									</div>
+									{order.pads_tir.length > 0 ? (
+										<div className="flex shrink-0 flex-wrap justify-end gap-1">
+											{order.pads_tir.map((pad) => (
+												<span
+													key={`${order.id}-${pad.code}`}
+													className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2 py-0.5 text-[11px] font-bold text-white"
+													title={pad.nom}
+												>
+													<MapPin className="h-3 w-3" />
+													{pad.code}
+												</span>
+											))}
+										</div>
+									) : (
+										<span className="shrink-0 text-[11px] font-medium text-amber-700">
+											Pas encore déposée sur un pad
+										</span>
+									)}
+								</div>
+							))}
+						</div>
+					</div>
+
 					<div className="grid gap-4 lg:grid-cols-2">
 						<QrScanner onScan={handleScanChargement} paused={scanning} />
 

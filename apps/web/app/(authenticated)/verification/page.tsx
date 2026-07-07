@@ -447,26 +447,56 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 		setLineStatus((prev) => ({ ...prev, [ligneId]: null }));
 	}, []);
 
-	const handleCountBlur = useCallback(
-		(ligne: LignePreparationResponse) => {
-			const counted = controlCounts[ligne.id];
-			if (counted === null || counted === undefined) return;
-			// Référence = quantité commandée (le contrôleur compte les boîtes réelles).
-			const expected = ligne.qte_demandee;
-			setLineStatus((prev) => ({ ...prev, [ligne.id]: counted === expected }));
-		},
-		[controlCounts],
-	);
+	// Vérification explicite : aucun feedback pendant la saisie. Les lignes
+	// correctes sont validées ; les lignes fausses sont signalées SANS révéler
+	// la quantité attendue, et leur saisie est effacée pour forcer un recomptage.
+	const handleCheckCounts = useCallback(() => {
+		if (!detail) return;
+		let wrong = 0;
+		const nextStatus: Record<string, boolean | null> = {};
+		const nextCounts: Record<string, number | null> = { ...controlCounts };
+		for (const l of detail.lignes) {
+			// Les lignes déjà validées restent validées.
+			if (lineStatus[l.id] === true) {
+				nextStatus[l.id] = true;
+				continue;
+			}
+			const counted = controlCounts[l.id];
+			if (counted === null || counted === undefined) {
+				nextStatus[l.id] = null;
+				continue;
+			}
+			const correct = counted === l.qte_demandee;
+			nextStatus[l.id] = correct;
+			if (!correct) {
+				wrong += 1;
+				nextCounts[l.id] = null;
+			}
+		}
+		setLineStatus(nextStatus);
+		setControlCounts(nextCounts);
+		if (wrong > 0) {
+			toast.warning(
+				`${wrong} article${wrong > 1 ? "s" : ""} mal compté${wrong > 1 ? "s" : ""} — recomptez-le${wrong > 1 ? "s" : ""}`,
+			);
+		} else {
+			toast.success("Comptage correct");
+		}
+	}, [detail, controlCounts, lineStatus]);
 
-	const allChecked = useMemo(() => {
+	const allEntered = useMemo(() => {
 		if (!detail?.lignes.length) return false;
-		return detail.lignes.every((l) => lineStatus[l.id] !== null);
-	}, [detail, lineStatus]);
+		return detail.lignes.every(
+			(l) =>
+				lineStatus[l.id] === true ||
+				(controlCounts[l.id] !== null && controlCounts[l.id] !== undefined),
+		);
+	}, [detail, lineStatus, controlCounts]);
 
 	const allCorrect = useMemo(() => {
-		if (!allChecked) return false;
-		return Object.values(lineStatus).every((v) => v === true);
-	}, [allChecked, lineStatus]);
+		if (!detail?.lignes.length) return false;
+		return detail.lignes.every((l) => lineStatus[l.id] === true);
+	}, [detail, lineStatus]);
 
 	const errorCount = useMemo(() => {
 		return Object.values(lineStatus).filter((v) => v === false).length;
@@ -543,7 +573,8 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 			<div className="flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
 				<ShieldCheck className="h-4 w-4 text-indigo-600" />
 				<p className="text-[13px] text-indigo-800">
-					Comptez chaque article et saisissez la quantité. Le résultat apparaît immédiatement.
+					Comptez chaque article, saisissez les quantités puis cliquez sur « Vérifier le comptage ».
+					Les articles corrects sont validés.
 				</p>
 			</div>
 
@@ -551,8 +582,10 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 				<div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
 					<XCircle className="h-4 w-4 text-red-600" />
 					<p className="text-[13px] text-red-800">
-						{errorCount} écart{errorCount > 1 ? "s" : ""} avec la quantité commandée — vous pouvez
-						tout de même valider, c'est votre comptage qui fait foi.
+						{errorCount} article{errorCount > 1 ? "s" : ""} mal compté
+						{errorCount > 1 ? "s" : ""} — recomptez{" "}
+						{errorCount > 1 ? "les articles signalés" : "l'article signalé"} puis vérifiez à
+						nouveau.
 					</p>
 				</div>
 			)}
@@ -589,8 +622,6 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 						{detail.lignes.map((ligne) => {
 							const counted = controlCounts[ligne.id];
 							const status = lineStatus[ligne.id];
-							const expected = ligne.qte_demandee;
-							const diff = (counted ?? 0) - expected;
 							return (
 								<TableRow
 									key={ligne.id}
@@ -610,10 +641,10 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 											type="number"
 											min={0}
 											value={counted ?? ""}
+											disabled={status === true}
 											onChange={(e) =>
 												handleCountChange(ligne.id, Number.parseInt(e.target.value) || 0)
 											}
-											onBlur={() => handleCountBlur(ligne)}
 											placeholder="—"
 											className={`mx-auto h-8 w-20 text-center text-[13px] tabular-nums ${
 												status === false
@@ -628,12 +659,13 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 										{status === null ? (
 											<span className="text-[11px] text-muted-foreground/40">—</span>
 										) : status ? (
-											<CheckCircle className="mx-auto h-4 w-4 text-emerald-500" />
-										) : (
-											<span className="text-[12px] font-bold text-red-600">
-												{diff > 0 ? `+${diff}` : diff} (
-												{diff > 0 ? "en trop" : `manque ${Math.abs(diff)}`})
+											<span className="inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-600">
+												<CheckCircle className="h-4 w-4" />
+												Validé
 											</span>
+										) : (
+											// Ne jamais révéler la quantité attendue ni l'écart.
+											<span className="text-[12px] font-bold text-red-600">À recompter</span>
 										)}
 									</TableCell>
 								</TableRow>
@@ -677,18 +709,29 @@ function VerificationDetail({ order, onBack }: { order: OrderResponse; onBack: (
 						className="h-9 w-20 text-center text-[13px] tabular-nums"
 					/>
 				</div>
-				<Button
-					onClick={handleValidate}
-					disabled={saving || !allChecked || !selectedLigne.length || !nbColis || nbColis < 1}
-					className="gap-1.5 rounded-lg bg-gradient-to-r from-[#0F766E] to-[#0D9488] text-[13px] font-semibold text-white shadow-sm hover:brightness-110"
-				>
-					{saving ? (
-						<Loader2 className="h-4 w-4 animate-spin" />
-					) : (
-						<CheckCircle className="h-4 w-4" />
-					)}
-					Valider → Prête
-				</Button>
+				<div className="flex items-center gap-2">
+					<Button
+						variant="outline"
+						onClick={handleCheckCounts}
+						disabled={saving || !allEntered || allCorrect}
+						className="gap-1.5 rounded-lg text-[13px] font-semibold"
+					>
+						<ShieldCheck className="h-4 w-4" />
+						Vérifier le comptage
+					</Button>
+					<Button
+						onClick={handleValidate}
+						disabled={saving || !allCorrect || !selectedLigne.length || !nbColis || nbColis < 1}
+						className="gap-1.5 rounded-lg bg-gradient-to-r from-[#0F766E] to-[#0D9488] text-[13px] font-semibold text-white shadow-sm hover:brightness-110"
+					>
+						{saving ? (
+							<Loader2 className="h-4 w-4 animate-spin" />
+						) : (
+							<CheckCircle className="h-4 w-4" />
+						)}
+						Valider → Prête
+					</Button>
+				</div>
 			</div>
 		</div>
 	);

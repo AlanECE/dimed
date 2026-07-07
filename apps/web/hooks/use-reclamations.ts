@@ -50,5 +50,13 @@ export function useReclamations(params: UseReclamationsParams = {}) {
 		fetch();
 	}
 
-	return { reclamations, total, loading, refetch: fetch, createReclamation };
+	async function updateReclamation(id: string, data: { statut: string; resolution?: string }) {
+		await fetchApi(`/reclamations/${id}`, {
+			method: "PATCH",
+			body: JSON.stringify(data),
+		});
+		fetch();
+	}
+
+	return { reclamations, total, loading, refetch: fetch, createReclamation, updateReclamation };
 }

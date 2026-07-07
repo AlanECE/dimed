@@ -274,7 +274,6 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 	const [scanningId, setScanningId] = useState<string | null>(null);
 	const [justScannedId, setJustScannedId] = useState<string | null>(null);
 	const [pulseCheckId, setPulseCheckId] = useState<string | null>(null);
-	const [warningsByLine, setWarningsByLine] = useState<Record<string, VignetteWarning[]>>({});
 	const [previewVignette, setPreviewVignette] = useState<VignetteResponse | null>(null);
 	const [captureForLineId, setCaptureForLineId] = useState<string | null>(null);
 
@@ -362,7 +361,6 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 			try {
 				const result = await scanLigneVignette(order.id, ligne.id, file);
 				setLocalLignes((prev) => prev.map((l) => (l.id === ligne.id ? result.ligne : l)));
-				setWarningsByLine((prev) => ({ ...prev, [ligne.id]: result.warnings }));
 				setJustScannedId(ligne.id);
 				if (result.warnings.length === 0) {
 					setPulseCheckId(ligne.id);
@@ -408,11 +406,6 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 						: l,
 				),
 			);
-			setWarningsByLine((prev) => {
-				const next = { ...prev };
-				delete next[ligne.id];
-				return next;
-			});
 			setPreviewVignette(null);
 			toast.success("Vignette retirée");
 		},
@@ -554,8 +547,6 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 							const isScanning = scanningId === ligne.id;
 							const justScanned = justScannedId === ligne.id;
 							const shouldPulse = pulseCheckId === ligne.id;
-							const lineWarnings = warningsByLine[ligne.id] ?? [];
-							const ppaDivergent = lineWarnings.includes("ppa_divergent");
 							return (
 								<TableRow
 									key={ligne.id}
@@ -633,21 +624,16 @@ function PreparationDetail({ order, onBack }: { order: OrderResponse; onBack: ()
 												/>
 											</div>
 											<div className="px-2 py-1.5">
+												{/* Le PPA de la vignette fait foi — aucune alerte de divergence
+												    avec le prix catalogue. */}
 												<Input
 													type="number"
 													step="0.01"
 													value={ligne.ppa ?? ""}
 													onChange={(e) => handleFieldEdit(ligne, "ppa", e.target.value)}
 													placeholder="—"
-													className={`h-7 font-mono text-[12px] tabular-nums ${
-														ppaDivergent ? "border-amber-400" : ""
-													}`}
+													className="h-7 font-mono text-[12px] tabular-nums"
 												/>
-												{ppaDivergent && ligne.medicament_ppa && (
-													<div className="mt-0.5 inline-flex items-center rounded border border-amber-300 bg-amber-100 px-1 py-0.5 text-[9px] font-semibold text-amber-900">
-														cat. {ligne.medicament_ppa} — divergent
-													</div>
-												)}
 											</div>
 										</div>
 									</td>

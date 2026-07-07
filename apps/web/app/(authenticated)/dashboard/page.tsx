@@ -3,10 +3,11 @@
 import { DashboardKPI } from "@/components/dashboard-kpi";
 import { OperatorOrderTable } from "@/components/operator-order-table";
 import { LayoutDashboard } from "lucide-react";
-import { Suspense, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Suspense } from "react";
 
 export default function DashboardPage() {
-	const [statusFilter, setStatusFilter] = useState("creee");
+	const router = useRouter();
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -19,9 +20,14 @@ export default function DashboardPage() {
 					<p className="text-[13px] text-muted-foreground">Vue d'ensemble des opérations</p>
 				</div>
 			</div>
-			<DashboardKPI onFilterChange={setStatusFilter} />
+			{/* Le filtre est piloté par l'URL : les KPI et le Select modifient le même paramètre. */}
+			<DashboardKPI
+				onFilterChange={(status) =>
+					router.push(status === "all" ? "/dashboard" : `/dashboard?statut=${status}`)
+				}
+			/>
 			<Suspense>
-				<OperatorOrderTable defaultStatus={statusFilter} />
+				<OperatorOrderTable />
 			</Suspense>
 		</div>
 	);
